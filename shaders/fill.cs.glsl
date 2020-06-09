@@ -44,9 +44,10 @@ layout(std430, binding = 1) buffer bTiles {
     restrict uint iTiles[];
 };
 
-layout(std430, binding = 2) buffer bAlphaTileIndices {
-    // List of alpha tile indices.
-    restrict readonly uint iAlphaTileIndices[];
+layout(std430, binding = 2) buffer bAlphaTiles {
+    // [0]: alpha tile index
+    // [1]: clip tile index
+    restrict readonly uint iAlphaTiles[];
 };
 
 #include "fill_compute.inc.glsl"
@@ -59,9 +60,17 @@ void main() {
     if (alphaTileIndex >= uAlphaTileCount)
         return;
 
-    uint tileIndex = iAlphaTileIndices[alphaTileIndex];
+    uint tileIndex = iAlphaTiles[alphaTileIndex * 2 + 0];
+    if ((int(iTiles[tileIndex * 4 + TILE_FIELD_BACKDROP_ALPHA_TILE_ID] << 8) >> 8) < 0)
+        return;
+
+    // TODO(pcwalton): Handle clips.
+    // TODO(pcwalton): Handle even-odd fill rule.
     int fillIndex = int(iTiles[tileIndex * 4 + TILE_FIELD_FIRST_FILL_ID]);
-    vec4 coverages = accumulateCoverageForFillList(fillIndex, tileSubCoord);
+    int backdrop = int(iTiles[tileIndex * 4 + TILE_FIELD_CONTROL]) >> 24;
+
+    vec4 coverages = accumulateCoverageForFillList(fillIndex, tileSubCoord) + vec4(backdrop);
+    coverages = clamp(abs(coverages), 0.0, 1.0);
 
     ivec2 tileOrigin = ivec2(16, 4) *
         ivec2(alphaTileIndex & 0xff,

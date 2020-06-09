@@ -285,6 +285,13 @@ pub struct TileD3D11 {
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
+pub struct AlphaTileD3D11 {
+    pub alpha_tile_index: AlphaTileId,
+    pub clip_tile_index: AlphaTileId,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct TilePathInfo {
     pub tile_min_x: i16,
     pub tile_min_y: i16,

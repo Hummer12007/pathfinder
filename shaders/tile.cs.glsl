@@ -94,15 +94,25 @@ void main() {
             ivec2 tileSubCoord = firstTileSubCoord + ivec2(0, subY);
             vec2 fragCoord = vec2(firstFragCoord + ivec2(0, subY)) + vec2(0.5);
 
-            uint alphaTileIndex =
-                iTiles[tileIndex * 4 + TILE_FIELD_BACKDROP_ALPHA_TILE_ID] & 0x00ffffffu;
+            int alphaTileIndex =
+                int(iTiles[tileIndex * 4 + TILE_FIELD_BACKDROP_ALPHA_TILE_ID] << 8) >> 8;
             uint tileControlWord = iTiles[tileIndex * 4 + TILE_FIELD_CONTROL];
             uint colorEntry = tileControlWord & 0xffff;
             int tileCtrl = int((tileControlWord >> 16) & 0xff);
-            int backdrop = int(tileControlWord) >> 24;
 
-            uvec2 maskTileCoord = uvec2(alphaTileIndex & 0xff, alphaTileIndex >> 8) *
-                uvec2(uTileSize);
+            int backdrop;
+            uvec2 maskTileCoord;
+            if (alphaTileIndex >= 0) {
+                backdrop = 0;
+                maskTileCoord = uvec2(alphaTileIndex & 0xff, alphaTileIndex >> 8) *
+                    uvec2(uTileSize);
+            } else {
+                // We have no alpha mask. Clear the mask bits so we don't try to look one up.
+                backdrop = int(tileControlWord) >> 24;
+                maskTileCoord = uvec2(0u);
+                tileCtrl &= ~(TILE_CTRL_MASK_MASK << TILE_CTRL_MASK_0_SHIFT);
+            }
+
             vec3 maskTexCoord0 = vec3(vec2(ivec2(maskTileCoord) + tileSubCoord), backdrop);
 
             vec2 colorTexCoord0;

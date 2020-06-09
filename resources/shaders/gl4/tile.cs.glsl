@@ -715,15 +715,25 @@ void main(){
             ivec2 tileSubCoord = firstTileSubCoord + ivec2(0, subY);
             vec2 fragCoord = vec2(firstFragCoord + ivec2(0, subY))+ vec2(0.5);
 
-            uint alphaTileIndex =
-                iTiles[tileIndex * 4 + 2]& 0x00ffffffu;
+            int alphaTileIndex =
+                int(iTiles[tileIndex * 4 + 2]<< 8)>> 8;
             uint tileControlWord = iTiles[tileIndex * 4 + 3];
             uint colorEntry = tileControlWord & 0xffff;
             int tileCtrl = int((tileControlWord >> 16)& 0xff);
-            int backdrop = int(tileControlWord)>> 24;
 
-            uvec2 maskTileCoord = uvec2(alphaTileIndex & 0xff, alphaTileIndex >> 8)*
-                uvec2(uTileSize);
+            int backdrop;
+            uvec2 maskTileCoord;
+            if(alphaTileIndex >= 0){
+                backdrop = 0;
+                maskTileCoord = uvec2(alphaTileIndex & 0xff, alphaTileIndex >> 8)*
+                    uvec2(uTileSize);
+            } else {
+
+                backdrop = int(tileControlWord)>> 24;
+                maskTileCoord = uvec2(0u);
+                tileCtrl &= ~(0x3 << 0);
+            }
+
             vec3 maskTexCoord0 = vec3(vec2(ivec2(maskTileCoord)+ tileSubCoord), backdrop);
 
             vec2 colorTexCoord0;

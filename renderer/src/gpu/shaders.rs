@@ -504,7 +504,7 @@ pub struct FillComputeProgram<D> where D: Device {
     pub alpha_tile_count_uniform: D::Uniform,
     pub fills_storage_buffer: D::StorageBuffer,
     pub tiles_storage_buffer: D::StorageBuffer,
-    pub alpha_tile_indices_storage_buffer: D::StorageBuffer,
+    pub alpha_tiles_storage_buffer: D::StorageBuffer,
 }
 
 impl<D> FillComputeProgram<D> where D: Device {
@@ -518,8 +518,7 @@ impl<D> FillComputeProgram<D> where D: Device {
         let alpha_tile_count_uniform = device.get_uniform(&program, "AlphaTileCount");
         let fills_storage_buffer = device.get_storage_buffer(&program, "Fills", 0);
         let tiles_storage_buffer = device.get_storage_buffer(&program, "Tiles", 1);
-        let alpha_tile_indices_storage_buffer =
-            device.get_storage_buffer(&program, "AlphaTileIndices", 2);
+        let alpha_tiles_storage_buffer = device.get_storage_buffer(&program, "AlphaTiles", 2);
 
         FillComputeProgram {
             program,
@@ -528,7 +527,7 @@ impl<D> FillComputeProgram<D> where D: Device {
             alpha_tile_count_uniform,
             fills_storage_buffer,
             tiles_storage_buffer,
-            alpha_tile_indices_storage_buffer,
+            alpha_tiles_storage_buffer,
         }
     }
 }
@@ -756,7 +755,7 @@ pub struct PropagateProgram<D> where D: Device {
     pub z_buffer_storage_buffer: D::StorageBuffer,
     pub first_tile_map_storage_buffer: D::StorageBuffer,
     pub indirect_draw_params_storage_buffer: D::StorageBuffer,
-    pub alpha_tile_indices_storage_buffer: D::StorageBuffer,
+    pub alpha_tiles_storage_buffer: D::StorageBuffer,
 }
 
 impl<D> PropagateProgram<D> where D: Device {
@@ -778,8 +777,7 @@ impl<D> PropagateProgram<D> where D: Device {
         let first_tile_map_storage_buffer = device.get_storage_buffer(&program, "FirstTileMap", 7);
         let indirect_draw_params_storage_buffer =
             device.get_storage_buffer(&program, "IndirectDrawParams", 8);
-        let alpha_tile_indices_storage_buffer =
-            device.get_storage_buffer(&program, "AlphaTileIndices", 9);
+        let alpha_tiles_storage_buffer = device.get_storage_buffer(&program, "AlphaTiles", 9);
 
         PropagateProgram {
             program,
@@ -794,7 +792,7 @@ impl<D> PropagateProgram<D> where D: Device {
             z_buffer_storage_buffer,
             first_tile_map_storage_buffer,
             indirect_draw_params_storage_buffer,
-            alpha_tile_indices_storage_buffer,
+            alpha_tiles_storage_buffer,
         }
     }
 }

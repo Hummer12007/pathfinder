@@ -11,9 +11,9 @@ struct bFills
     uint iFills[1];
 };
 
-struct bAlphaTileIndices
+struct bAlphaTiles
 {
-    uint iAlphaTileIndices[1];
+    uint iAlphaTiles[1];
 };
 
 struct bTiles
@@ -58,7 +58,7 @@ float4 accumulateCoverageForFillList(thread int& fillIndex, thread const int2& t
     return coverages;
 }
 
-kernel void main0(constant int& uAlphaTileCount [[buffer(1)]], const device bFills& v_144 [[buffer(0)]], const device bAlphaTileIndices& _244 [[buffer(2)]], device bTiles& _252 [[buffer(3)]], texture2d<float> uAreaLUT [[texture(0)]], texture2d<float, access::write> uDest [[texture(1)]], sampler uAreaLUTSmplr [[sampler(0)]], uint3 gl_LocalInvocationID [[thread_position_in_threadgroup]], uint3 gl_WorkGroupID [[threadgroup_position_in_grid]])
+kernel void main0(constant int& uAlphaTileCount [[buffer(1)]], const device bFills& v_144 [[buffer(0)]], const device bAlphaTiles& _244 [[buffer(2)]], device bTiles& _254 [[buffer(3)]], texture2d<float> uAreaLUT [[texture(0)]], texture2d<float, access::write> uDest [[texture(1)]], sampler uAreaLUTSmplr [[sampler(0)]], uint3 gl_LocalInvocationID [[thread_position_in_threadgroup]], uint3 gl_WorkGroupID [[threadgroup_position_in_grid]])
 {
     int2 tileSubCoord = int2(gl_LocalInvocationID.xy) * int2(1, 4);
     uint alphaTileIndex = gl_WorkGroupID.x | (gl_WorkGroupID.y << uint(15));
@@ -66,12 +66,18 @@ kernel void main0(constant int& uAlphaTileCount [[buffer(1)]], const device bFil
     {
         return;
     }
-    uint tileIndex = _244.iAlphaTileIndices[alphaTileIndex];
-    int fillIndex = int(_252.iTiles[(tileIndex * 4u) + 1u]);
+    uint tileIndex = _244.iAlphaTiles[(alphaTileIndex * 2u) + 0u];
+    if ((int(_254.iTiles[(tileIndex * 4u) + 2u] << uint(8)) >> 8) < 0)
+    {
+        return;
+    }
+    int fillIndex = int(_254.iTiles[(tileIndex * 4u) + 1u]);
+    int backdrop = int(_254.iTiles[(tileIndex * 4u) + 3u]) >> 24;
     int param = fillIndex;
     int2 param_1 = tileSubCoord;
-    float4 _265 = accumulateCoverageForFillList(param, param_1, v_144, uAreaLUT, uAreaLUTSmplr);
-    float4 coverages = _265;
+    float4 _291 = accumulateCoverageForFillList(param, param_1, v_144, uAreaLUT, uAreaLUTSmplr);
+    float4 coverages = _291 + float4(float(backdrop));
+    coverages = fast::clamp(abs(coverages), float4(0.0), float4(1.0));
     int2 tileOrigin = int2(16, 4) * int2(int(alphaTileIndex & 255u), int((alphaTileIndex >> 8u) & (255u + (((alphaTileIndex >> 16u) & 255u) << 8u))));
     int2 destCoord = tileOrigin + int2(gl_LocalInvocationID.xy);
     uDest.write(coverages, uint2(destCoord));

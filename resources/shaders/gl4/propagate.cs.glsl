@@ -95,9 +95,10 @@ layout(std430, binding = 8)buffer bIndirectDrawParams {
     restrict uint iIndirectDrawParams[];
 };
 
-layout(std430, binding = 9)buffer bAlphaTileIndices {
+layout(std430, binding = 9)buffer bAlphaTiles {
 
-    restrict uint iAlphaTileIndices[];
+
+    restrict uint iAlphaTiles[];
 };
 
 uint calculateTileIndex(uint bufferOffset, uvec4 tileRect, uvec2 tileCoord){
@@ -135,16 +136,14 @@ void main(){
         int drawFirstFillIndex = int(iDrawTiles[drawTileIndex * 4 + 1]);
         int drawBackdropDelta =
             int(iDrawTiles[drawTileIndex * 4 + 2])>> 24;
-        uint drawTileWord = iDrawTiles[drawTileIndex * 4 + 3];
+        uint drawTileWord = iDrawTiles[drawTileIndex * 4 + 3]& 0x00ffffff;
 
         int drawTileBackdrop = currentBackdrop;
 
 
 
-        if(drawFirstFillIndex >= 0){
+        if(drawFirstFillIndex >= 0)
             drawAlphaTileIndex = int(atomicAdd(iIndirectDrawParams[4], 1));
-            iAlphaTileIndices[drawAlphaTileIndex]= drawTileIndex;
-        }
 
 
         if(clipPathIndex >= 0){
@@ -192,10 +191,15 @@ void main(){
             iClipVertexBuffer[drawTileIndex]= clipTileData;
         }
 
+        if(drawAlphaTileIndex >= 0){
+            iAlphaTiles[drawAlphaTileIndex * 2 + 0]= drawTileIndex;
+            iAlphaTiles[drawAlphaTileIndex * 2 + 1]= - 1;
+        }
+
         iDrawTiles[drawTileIndex * 4 + 2]=
             (uint(drawAlphaTileIndex)& 0x00ffffffu)|(uint(drawBackdropDelta)<< 24);
         iDrawTiles[drawTileIndex * 4 + 3]=
-            (drawTileWord & 0x00ffffff)|(uint(drawTileBackdrop)<< 24);
+            drawTileWord |(uint(drawTileBackdrop)<< 24);
 
 
         ivec2 tileCoord = ivec2(tileX, tileY)+ ivec2(drawTileRect . xy);

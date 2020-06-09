@@ -74,9 +74,10 @@ layout(std430, binding = 1)buffer bTiles {
     restrict uint iTiles[];
 };
 
-layout(std430, binding = 2)buffer bAlphaTileIndices {
+layout(std430, binding = 2)buffer bAlphaTiles {
 
-    restrict readonly uint iAlphaTileIndices[];
+
+    restrict readonly uint iAlphaTiles[];
 };
 
 
@@ -115,9 +116,17 @@ void main(){
     if(alphaTileIndex >= uAlphaTileCount)
         return;
 
-    uint tileIndex = iAlphaTileIndices[alphaTileIndex];
+    uint tileIndex = iAlphaTiles[alphaTileIndex * 2 + 0];
+    if((int(iTiles[tileIndex * 4 + 2]<< 8)>> 8)< 0)
+        return;
+
+
+
     int fillIndex = int(iTiles[tileIndex * 4 + 1]);
-    vec4 coverages = accumulateCoverageForFillList(fillIndex, tileSubCoord);
+    int backdrop = int(iTiles[tileIndex * 4 + 3])>> 24;
+
+    vec4 coverages = accumulateCoverageForFillList(fillIndex, tileSubCoord)+ vec4(backdrop);
+    coverages = clamp(abs(coverages), 0.0, 1.0);
 
     ivec2 tileOrigin = ivec2(16, 4)*
         ivec2(alphaTileIndex & 0xff,

@@ -93,9 +93,10 @@ layout(std430, binding = 8) buffer bIndirectDrawParams {
     restrict uint iIndirectDrawParams[];
 };
 
-layout(std430, binding = 9) buffer bAlphaTileIndices {
-    // List of alpha tile indices.
-    restrict uint iAlphaTileIndices[];
+layout(std430, binding = 9) buffer bAlphaTiles {
+    // [0]: alpha tile index
+    // [1]: clip tile index
+    restrict uint iAlphaTiles[];
 };
 
 uint calculateTileIndex(uint bufferOffset, uvec4 tileRect, uvec2 tileCoord) {
@@ -133,16 +134,14 @@ void main() {
         int drawFirstFillIndex = int(iDrawTiles[drawTileIndex * 4 + TILE_FIELD_FIRST_FILL_ID]);
         int drawBackdropDelta =
             int(iDrawTiles[drawTileIndex * 4 + TILE_FIELD_BACKDROP_ALPHA_TILE_ID]) >> 24;
-        uint drawTileWord = iDrawTiles[drawTileIndex * 4 + TILE_FIELD_CONTROL];
+        uint drawTileWord = iDrawTiles[drawTileIndex * 4 + TILE_FIELD_CONTROL] & 0x00ffffff;
 
         int drawTileBackdrop = currentBackdrop;
 
         // Allocate an alpha tile if necessary.
         // TODO(pcwalton): Don't do this if we're just going to overwrite it later.
-        if (drawFirstFillIndex >= 0) {
+        if (drawFirstFillIndex >= 0)
             drawAlphaTileIndex = int(atomicAdd(iIndirectDrawParams[4], 1));
-            iAlphaTileIndices[drawAlphaTileIndex] = drawTileIndex;
-        }
 
         // Handle clip if necessary.
         if (clipPathIndex >= 0) {
@@ -190,10 +189,15 @@ void main() {
             iClipVertexBuffer[drawTileIndex] = clipTileData;
         }
 
+        if (drawAlphaTileIndex >= 0) {
+            iAlphaTiles[drawAlphaTileIndex * 2 + 0] = drawTileIndex;
+            iAlphaTiles[drawAlphaTileIndex * 2 + 1] = -1;
+        }
+
         iDrawTiles[drawTileIndex * 4 + TILE_FIELD_BACKDROP_ALPHA_TILE_ID] =
             (uint(drawAlphaTileIndex) & 0x00ffffffu) | (uint(drawBackdropDelta) << 24);
         iDrawTiles[drawTileIndex * 4 + TILE_FIELD_CONTROL] =
-            (drawTileWord & 0x00ffffff) | (uint(drawTileBackdrop) << 24);
+            drawTileWord | (uint(drawTileBackdrop) << 24);
 
         // Write to Z-buffer if necessary.
         ivec2 tileCoord = ivec2(tileX, tileY) + ivec2(drawTileRect.xy);
