@@ -19,10 +19,10 @@ use crate::gpu::shaders::{CopyTileProgram, D3D11Programs, FillProgram, MAX_FILLS
 use crate::gpu::shaders::{PROPAGATE_WORKGROUP_SIZE, ReprojectionProgram, ReprojectionVertexArray};
 use crate::gpu::shaders::{SORT_WORKGROUP_SIZE, StencilProgram, StencilVertexArray};
 use crate::gpu::shaders::{TileProgram, TileProgramCommon};
-use crate::gpu_data::{BackdropInfo, Clip, DiceMetadata, Fill, PathSource, PrepareTilesBatch};
+use crate::gpu_data::{BackdropInfo, Clip, DiceMetadata, Fill, PathSource};
 use crate::gpu_data::{PrepareTilesModalInfo, PropagateMetadata, RenderCommand, SegmentIndices};
 use crate::gpu_data::{Segments, TextureLocation, TextureMetadataEntry, TexturePageDescriptor};
-use crate::gpu_data::{TexturePageId, TileBatchTexture, TileObjectPrimitive, TilePathInfo};
+use crate::gpu_data::{TexturePageId, TileBatchDataD3D11, TileBatchTexture, TileObjectPrimitive, TilePathInfo};
 use crate::options::BoundingQuad;
 use crate::paint::PaintCompositeOp;
 use crate::tile_map::DenseTileMap;
@@ -49,6 +49,7 @@ use pathfinder_simd::default::{F32x2, F32x4, I32x2};
 use std::collections::VecDeque;
 use std::f32;
 use std::mem;
+use std::ops::Range;
 use std::time::Duration;
 use std::u32;
 use vec_map::VecMap;
@@ -340,9 +341,11 @@ impl<D> Renderer<D> where D: Device {
                 self.push_render_target(render_target_id)
             }
             RenderCommand::PopRenderTarget => self.pop_render_target(),
-            RenderCommand::PrepareTiles(ref batch) => self.prepare_tiles(batch),
-            RenderCommand::DrawTiles(ref batch) => {
-                let batch_info = self.back_frame.tile_batch_info[batch.tile_batch_id.0 as usize];
+            RenderCommand::PrepareClipTilesD3D11(ref batch) => self.prepare_tiles_d3d11(batch),
+            RenderCommand::DrawTilesD3D11(ref batch) => {
+                let tile_batch_id = batch.tile_batch_data.batch_id;
+                self.prepare_tiles_d3d11(&batch.tile_batch_data);
+                let batch_info = self.back_frame.tile_batch_info[tile_batch_id.0 as usize];
                 self.draw_tiles(batch_info.tile_count,
                                 batch.color_texture,
                                 batch.blend_mode,
@@ -479,6 +482,8 @@ impl<D> Renderer<D> where D: Device {
                 return;
             }
         }
+
+        //println!("*** reallocating alpha tile pages");
 
         let new_size = vec2i(MASK_FRAMEBUFFER_WIDTH,
                              MASK_FRAMEBUFFER_HEIGHT * alpha_tile_pages_needed as i32);
@@ -1162,7 +1167,13 @@ impl<D> Renderer<D> where D: Device {
                               alpha_tiles_storage_id: StorageID,
                               propagate_tiles_info: &PropagateTilesInfo) {
         let &FillComputeStorageInfo { fill_storage_id } = fill_storage_info;
-        let &PropagateTilesInfo { alpha_tile_count } = propagate_tiles_info;
+        let &PropagateTilesInfo { ref alpha_tile_range } = propagate_tiles_info;
+
+        /*
+        println!("draw_fills_via_compute({:?}..{:?})",
+                 alpha_tile_range.start,
+                 alpha_tile_range.end);
+                 */
 
         let fill_compute_program = match self.fill_program {
             FillProgram::Compute(ref fill_compute_program) => fill_compute_program,
@@ -1196,6 +1207,7 @@ impl<D> Renderer<D> where D: Device {
         self.device.begin_timer_query(&timer_query);
 
         // This setup is an annoying workaround for the 64K limit of compute invocation in OpenGL.
+        let alpha_tile_count = alpha_tile_range.end - alpha_tile_range.start;
         let dimensions = ComputeDimensions {
             x: alpha_tile_count.min(1 << 15) as u32,
             y: ((alpha_tile_count + (1 << 15) - 1) >> 15) as u32,
@@ -1205,10 +1217,11 @@ impl<D> Renderer<D> where D: Device {
         self.device.dispatch_compute(dimensions, &ComputeState {
             program: &fill_compute_program.program,
             textures: &[(&fill_compute_program.area_lut_texture, &self.area_lut_texture)],
-            images: &[(&fill_compute_program.dest_image, image_texture, ImageAccess::Write)],
+            images: &[(&fill_compute_program.dest_image, image_texture, ImageAccess::ReadWrite)],
             uniforms: &[
-                (&fill_compute_program.alpha_tile_count_uniform,
-                 UniformData::Int(alpha_tile_count as i32)),
+                (&fill_compute_program.alpha_tile_range_uniform,
+                 UniformData::IVec2(I32x2::new(alpha_tile_range.start as i32,
+                                               alpha_tile_range.end as i32))),
             ],
             storage_buffers: &[
                 (&fill_compute_program.fills_storage_buffer, &fill_vertex_storage.vertex_buffer),
@@ -1312,7 +1325,7 @@ impl<D> Renderer<D> where D: Device {
     }
 
     // Computes backdrops, performs clipping, and populates Z buffers on GPU.
-    fn prepare_tiles(&mut self, batch: &PrepareTilesBatch) {
+    fn prepare_tiles_d3d11(&mut self, batch: &TileBatchDataD3D11) {
         self.stats.tile_count += batch.tile_count as usize;
 
         // Upload tiles to GPU or allocate them as appropriate.
@@ -1414,8 +1427,8 @@ impl<D> Renderer<D> where D: Device {
                                             alpha_tiles_storage_id,
                                             &propagate_tiles_info);
 
-                self.sort_tiles(tiles_d3d11_storage_id,
-                                first_tile_map_storage_id);
+                // FIXME(pcwalton): This seems like the wrong place to do this...
+                self.sort_tiles(tiles_d3d11_storage_id, first_tile_map_storage_id);
 
                 TileBatchLevelInfo::D3D11(TileBatchInfoD3D11 {
                     tiles_d3d11_storage_id,
@@ -1437,7 +1450,7 @@ impl<D> Renderer<D> where D: Device {
         match batch.modal {
             PrepareTilesModalInfo::GPU(_) => self.prepare_z_buffer(z_buffer_storage_id),
             PrepareTilesModalInfo::CPU(ref cpu_info) => {
-                self.upload_z_buffer(z_buffer_storage_id, &cpu_info.z_buffer)
+                //self.upload_z_buffer(z_buffer_storage_id, &cpu_info.z_buffer)
             }
         }
 
@@ -1543,6 +1556,16 @@ impl<D> Renderer<D> where D: Device {
             (&propagate_program.alpha_tiles_storage_buffer, alpha_tiles_storage_buffer),
         ];
 
+        // FIXME(pcwalton): REMOVE
+        let indirect_draw_params_receiver = self.device.read_buffer(&indirect_draw_params_buffer,
+                                                                    BufferTarget::Storage,
+                                                                    0..32);
+        let indirect_draw_params = self.device.recv_buffer(&indirect_draw_params_receiver);
+        let indirect_draw_params: &[u32] = indirect_draw_params.as_slice_of().unwrap();
+        assert_eq!(indirect_draw_params[4], 0);
+
+        //println!("draw storage id: {:?}", tiles_d3d11_storage_id);
+
         if let Some(clip_storage_ids) = clip_storage_ids {
             let clip_metadata_storage_id =
                 clip_storage_ids.metadata.expect("Where's the clip metadata storage?");
@@ -1560,6 +1583,7 @@ impl<D> Renderer<D> where D: Device {
                                   clip_metadata_buffer));
             storage_buffers.push((&propagate_program.clip_tiles_storage_buffer,
                                   clip_tile_buffer));
+            //println!("clip storage id: {:?}", clip_storage_ids.tiles);
         }
 
         let timer_query = self.timer_query_cache.alloc(&self.device);
@@ -1578,6 +1602,8 @@ impl<D> Renderer<D> where D: Device {
                 (&propagate_program.framebuffer_tile_size_uniform,
                  UniformData::IVec2(self.framebuffer_tile_size().0)),
                 (&propagate_program.column_count_uniform, UniformData::Int(column_count as i32)),
+                (&propagate_program.first_alpha_tile_index_uniform,
+                 UniformData::Int(self.back_frame.alpha_tile_count as i32)),
             ],
             storage_buffers: &storage_buffers,
         });
@@ -1592,12 +1618,29 @@ impl<D> Renderer<D> where D: Device {
         let indirect_draw_params = self.device.recv_buffer(&indirect_draw_params_receiver);
         let indirect_draw_params: &[u32] = indirect_draw_params.as_slice_of().unwrap();
 
-        let alpha_tile_count =
+        let batch_alpha_tile_count =
             indirect_draw_params[FILL_INDIRECT_DRAW_PARAMS_ALPHA_TILE_COUNT_INDEX];
 
-        self.back_frame.alpha_tile_count += alpha_tile_count;
+        let alpha_tile_start = self.back_frame.alpha_tile_count;
+        self.back_frame.alpha_tile_count += batch_alpha_tile_count;
+        let alpha_tile_end = self.back_frame.alpha_tile_count;
 
-        PropagateTilesInfo { alpha_tile_count }
+        /*
+        let alpha_tile_receiver = self.device.read_buffer(&alpha_tiles_storage_buffer,
+                                                          BufferTarget::Storage,
+                                                          0..(batch_alpha_tile_count as usize * 8));
+        let alpha_tile_indices = self.device.recv_buffer(&alpha_tile_receiver);
+        let alpha_tile_indices: &[i32] = alpha_tile_indices.as_slice_of().unwrap();
+        for batch_alpha_tile_index in 0..(batch_alpha_tile_count as usize) {
+            println!("[{}]: alpha_tile_index {}, tile_index {}, clip_tile_index {}",
+                     batch_alpha_tile_index,
+                     alpha_tile_start + batch_alpha_tile_index as u32,
+                     alpha_tile_indices[batch_alpha_tile_index * 2 + 0],
+                     alpha_tile_indices[batch_alpha_tile_index * 2 + 1]);
+        }
+        */
+
+        PropagateTilesInfo { alpha_tile_range: alpha_tile_start..alpha_tile_end }
     }
 
     fn sort_tiles(&mut self,
@@ -2909,7 +2952,7 @@ impl<D> SceneSourceBuffers<D> where D: Device {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct PropagateTilesInfo {
-    alpha_tile_count: u32,
+    alpha_tile_range: Range<u32>,
 }

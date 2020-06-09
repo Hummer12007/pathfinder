@@ -31,6 +31,7 @@ layout(local_size_x = 64)in;
 
 uniform ivec2 uFramebufferTileSize;
 uniform int uColumnCount;
+uniform int uFirstAlphaTileIndex;
 
 layout(std430, binding = 0)buffer bDrawMetadata {
 
@@ -136,11 +137,8 @@ void main(){
         uint drawTileWord = iDrawTiles[drawTileIndex * 4 + 3]& 0x00ffffff;
 
         int drawTileBackdrop = currentBackdrop;
-
-
-
-        if(drawFirstFillIndex >= 0)
-            drawAlphaTileIndex = int(atomicAdd(iIndirectDrawParams[4], 1));
+        bool haveDrawAlphaMask = drawFirstFillIndex >= 0;
+        bool needNewAlphaTile = haveDrawAlphaMask;
 
 
         if(clipPathIndex >= 0){
@@ -152,31 +150,58 @@ void main(){
                                                         clipTileRect,
                                                         clipTileCoord);
 
-                clipAlphaTileIndex = int(iClipTiles[clipTileIndex * 4 + 1]);
+
+
+
+
+
+                int thisClipAlphaTileIndex =
+                    int(iClipTiles[clipTileIndex * 4 +
+                                                                   2]<< 8)>> 8;
+
                 uint clipTileWord = iClipTiles[clipTileIndex * 4 + 3];
                 int clipTileBackdrop = int(clipTileWord)>> 24;
 
-                if(clipAlphaTileIndex >= 0 && drawAlphaTileIndex < 0 && drawTileBackdrop != 0){
+                if(thisClipAlphaTileIndex >= 0){
+                    if(haveDrawAlphaMask){
+                        clipAlphaTileIndex = thisClipAlphaTileIndex;
+                        needNewAlphaTile = true;
+                    } else {
+                        if(drawTileBackdrop != 0){
 
 
-                    drawAlphaTileIndex = clipAlphaTileIndex;
-                    drawTileBackdrop = clipTileBackdrop;
-                    clipAlphaTileIndex = - 1;
-                } else if(clipAlphaTileIndex < 0 && clipTileBackdrop == 0){
+                            drawAlphaTileIndex = thisClipAlphaTileIndex;
+                            clipAlphaTileIndex = - 1;
+                            needNewAlphaTile = false;
+                        } else {
 
-                    drawAlphaTileIndex = - 1;
-                    drawTileBackdrop = 0;
+                            drawAlphaTileIndex = - 1;
+                            clipAlphaTileIndex = - 1;
+                            needNewAlphaTile = false;
+                        }
+                    }
+                } else {
+
+                    if(clipTileBackdrop == 0){
+
+                        drawTileBackdrop = 0;
+                        needNewAlphaTile = false;
+                    } else {
+                        needNewAlphaTile = true;
+                    }
                 }
             } else {
 
-                drawAlphaTileIndex = - 1;
                 drawTileBackdrop = 0;
+                needNewAlphaTile = false;
             }
         }
 
-        if(drawAlphaTileIndex >= 0){
-            iAlphaTiles[drawAlphaTileIndex * 2 + 0]= drawTileIndex;
-            iAlphaTiles[drawAlphaTileIndex * 2 + 1]= - 1;
+        if(needNewAlphaTile){
+            uint drawBatchAlphaTileIndex = atomicAdd(iIndirectDrawParams[4], 1);
+            iAlphaTiles[drawBatchAlphaTileIndex * 2 + 0]= drawTileIndex;
+            iAlphaTiles[drawBatchAlphaTileIndex * 2 + 1]= clipAlphaTileIndex;
+            drawAlphaTileIndex = int(drawBatchAlphaTileIndex)+ uFirstAlphaTileIndex;
         }
 
         iDrawTiles[drawTileIndex * 4 + 2]=

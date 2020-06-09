@@ -13,11 +13,11 @@
 use crate::concurrent::executor::Executor;
 use crate::gpu::options::RendererLevel;
 use crate::gpu::renderer::BlendModeExt;
-use crate::gpu_data::{AlphaTileId, BackdropInfo, Clip, ClippedPathInfo};
-use crate::gpu_data::{DiceMetadata, DrawTileBatch, Fill, PathBatchIndex, PathSource};
-use crate::gpu_data::{PrepareTilesBatch, PrepareTilesCPUInfo, PrepareTilesGPUInfo};
-use crate::gpu_data::{PrepareTilesModalInfo, PropagateMetadata, RenderCommand, SegmentIndices};
-use crate::gpu_data::{Segments, TileBatchId, TileBatchTexture, TileObjectPrimitive, TilePathInfo};
+use crate::gpu_data::{AlphaTileId, BackdropInfo, Clip, ClippedPathInfo, DiceMetadata};
+use crate::gpu_data::{DrawTileBatchD3D11, Fill, PathBatchIndex, PathSource, PrepareTilesCPUInfo};
+use crate::gpu_data::{PrepareTilesGPUInfo, PrepareTilesModalInfo, PropagateMetadata};
+use crate::gpu_data::{RenderCommand, SegmentIndices, Segments, TileBatchDataD3D11, TileBatchId};
+use crate::gpu_data::{TileBatchTexture, TileObjectPrimitive, TilePathInfo};
 use crate::options::{PrepareMode, PreparedBuildOptions, PreparedRenderTransform};
 use crate::paint::{PaintId, PaintInfo, PaintMetadata};
 use crate::scene::{ClipPathId, DisplayItem, DrawPath, DrawPathId, LastSceneInfo, PathId};
@@ -622,15 +622,10 @@ impl ObjectBuilder {
     }
 }
 
-struct PathBatches {
-    prepare: PrepareTilesBatch,
-    draw: DrawTileBatch,
-}
-
-impl PrepareTilesBatch {
+impl TileBatchDataD3D11 {
     fn new(batch_id: TileBatchId, tile_rect: RectI, mode: &PrepareMode, path_source: PathSource)
-           -> PrepareTilesBatch {
-        PrepareTilesBatch {
+           -> TileBatchDataD3D11 {
+        TileBatchDataD3D11 {
             batch_id,
             path_count: 0,
             tile_count: 0,
@@ -880,7 +875,7 @@ impl Segments {
 }
 
 struct TileBatchBuilder {
-    clip_prepare_batch: PrepareTilesBatch,
+    clip_prepare_batch: TileBatchDataD3D11,
     prepare_commands: Vec<RenderCommand>,
     draw_commands: Vec<RenderCommand>,
     clip_id_to_path_batch_index: FxHashMap<ClipPathId, PathBatchIndex>,
@@ -896,10 +891,10 @@ impl TileBatchBuilder {
         TileBatchBuilder {
             prepare_commands: vec![],
             draw_commands: vec![],
-            clip_prepare_batch: PrepareTilesBatch::new(TileBatchId(0),
-                                                       scene_tile_rect,
-                                                       &prepare_mode,
-                                                       PathSource::Clip),
+            clip_prepare_batch: TileBatchDataD3D11::new(TileBatchId(0),
+                                                        scene_tile_rect,
+                                                        &prepare_mode,
+                                                        PathSource::Clip),
             next_batch_id: TileBatchId(1),
             clip_id_to_path_batch_index: FxHashMap::default(),
             built_paths,
@@ -915,7 +910,7 @@ impl TileBatchBuilder {
                                                      prepare_mode: &PrepareMode) {
         let scene_tile_rect = tiles::round_rect_out_to_tile_bounds(scene.view_box());
 
-        let mut batches = None;
+        let mut draw_tile_batch = None;
         for draw_path_id in draw_path_id_range.start.0..draw_path_id_range.end.0 {
             let draw_path_id = DrawPathId(draw_path_id);
             let draw_path = match self.built_paths {
@@ -935,39 +930,33 @@ impl TileBatchBuilder {
             };
 
             // Try to reuse the current batch if we can. Otherwise, flush it.
-            match batches {
-                Some(PathBatches {
-                    draw: DrawTileBatch {
-                        color_texture: ref batch_color_texture,
-                        filter: ref batch_filter,
-                        blend_mode: ref batch_blend_mode,
-                        tile_batch_id: _
-                    },
-                    prepare: _,
+            match draw_tile_batch {
+                Some(DrawTileBatchD3D11 {
+                    color_texture: ref batch_color_texture,
+                    filter: ref batch_filter,
+                    blend_mode: ref batch_blend_mode,
+                    tile_batch_data: _
                 }) if draw_path.color_texture == *batch_color_texture &&
                     draw_path.filter == *batch_filter &&
                     draw_path.blend_mode == *batch_blend_mode => {}
-                Some(PathBatches { draw, prepare }) => {
-                    self.prepare_commands.push(RenderCommand::PrepareTiles(prepare));
-                    self.draw_commands.push(RenderCommand::DrawTiles(draw));
-                    batches = None;
+                Some(draw_tile_batch_to_flush) => {
+                    self.draw_commands
+                        .push(RenderCommand::DrawTilesD3D11(draw_tile_batch_to_flush));
+                    draw_tile_batch = None;
                 }
                 None => {}
             }
 
             // Create a new batch if necessary.
-            if batches.is_none() {
-                batches = Some(PathBatches {
-                    prepare: PrepareTilesBatch::new(self.next_batch_id,
-                                                    scene_tile_rect,
-                                                    &prepare_mode,
-                                                    PathSource::Draw),
-                    draw: DrawTileBatch {
-                        tile_batch_id: self.next_batch_id,
-                        color_texture: draw_path.color_texture,
-                        filter: draw_path.filter,
-                        blend_mode: draw_path.blend_mode,
-                    },
+            if draw_tile_batch.is_none() {
+                draw_tile_batch = Some(DrawTileBatchD3D11 {
+                    tile_batch_data: TileBatchDataD3D11::new(self.next_batch_id,
+                                                             scene_tile_rect,
+                                                             &prepare_mode,
+                                                             PathSource::Draw),
+                    color_texture: draw_path.color_texture,
+                    filter: draw_path.filter,
+                    blend_mode: draw_path.blend_mode,
                 });
                 self.next_batch_id.0 += 1;
             }
@@ -1004,13 +993,15 @@ impl TileBatchBuilder {
                 }
             };
 
-            let batches = batches.as_mut().unwrap();
-            batches.prepare.push(&draw_path.path, draw_path_id.to_path_id(), clip_path, sink);
+            let draw_tile_batch = draw_tile_batch.as_mut().unwrap();
+            draw_tile_batch.tile_batch_data.push(&draw_path.path,
+                                                 draw_path_id.to_path_id(),
+                                                 clip_path,
+                                                 sink);
         }
 
-        if let Some(PathBatches { draw, prepare }) = batches {
-            self.prepare_commands.push(RenderCommand::PrepareTiles(prepare));
-            self.draw_commands.push(RenderCommand::DrawTiles(draw));
+        if let Some(draw_tile_batch) = draw_tile_batch {
+            self.draw_commands.push(RenderCommand::DrawTilesD3D11(draw_tile_batch));
         }
     }
 
@@ -1080,7 +1071,7 @@ impl TileBatchBuilder {
 
     fn send_to(self, sink: &SceneSink) {
         if self.clip_prepare_batch.path_count > 0 {
-            sink.listener.send(RenderCommand::PrepareTiles(self.clip_prepare_batch));
+            sink.listener.send(RenderCommand::PrepareClipTilesD3D11(self.clip_prepare_batch));
         }
         for command in self.prepare_commands {
             sink.listener.send(command);

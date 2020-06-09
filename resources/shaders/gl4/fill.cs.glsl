@@ -57,9 +57,9 @@ layout(local_size_x = 16, local_size_y = 4)in;
 
 
 
-uniform writeonly image2D uDest;
+layout(rgba8)uniform image2D uDest;
 uniform sampler2D uAreaLUT;
-uniform int uAlphaTileCount;
+uniform ivec2 uAlphaTileRange;
 
 layout(std430, binding = 0)buffer bFills {
     restrict readonly uint iFills[];
@@ -108,30 +108,38 @@ vec4 accumulateCoverageForFillList(int fillIndex, ivec2 tileSubCoord){
 }
 
 
+ivec2 computeTileCoord(uint alphaTileIndex){
+    uint x = alphaTileIndex & 0xff;
+    uint y =(alphaTileIndex >> 8u)& 0xff +(((alphaTileIndex >> 16u)& 0xff)<< 8u);
+    return ivec2(16, 4)* ivec2(x, y)+ ivec2(gl_LocalInvocationID . xy);
+}
+
 void main(){
     ivec2 tileSubCoord = ivec2(gl_LocalInvocationID . xy)* ivec2(1, 4);
 
 
-    uint alphaTileIndex =(gl_WorkGroupID . x |(gl_WorkGroupID . y << 15));
-    if(alphaTileIndex >= uAlphaTileCount)
+    uint batchAlphaTileIndex =(gl_WorkGroupID . x |(gl_WorkGroupID . y << 15));
+    uint alphaTileIndex = batchAlphaTileIndex + uint(uAlphaTileRange . x);
+    if(alphaTileIndex >= uint(uAlphaTileRange . y))
         return;
 
-    uint tileIndex = iAlphaTiles[alphaTileIndex * 2 + 0];
+    uint tileIndex = iAlphaTiles[batchAlphaTileIndex * 2 + 0];
     if((int(iTiles[tileIndex * 4 + 2]<< 8)>> 8)< 0)
         return;
-
 
 
     int fillIndex = int(iTiles[tileIndex * 4 + 1]);
     int backdrop = int(iTiles[tileIndex * 4 + 3])>> 24;
 
-    vec4 coverages = accumulateCoverageForFillList(fillIndex, tileSubCoord)+ vec4(backdrop);
+    vec4 coverages = vec4(backdrop);
+    int clipTileIndex = int(iAlphaTiles[batchAlphaTileIndex * 2 + 1]);
+    coverages += accumulateCoverageForFillList(fillIndex, tileSubCoord);
     coverages = clamp(abs(coverages), 0.0, 1.0);
 
-    ivec2 tileOrigin = ivec2(16, 4)*
-        ivec2(alphaTileIndex & 0xff,
-              (alphaTileIndex >> 8u)& 0xff +(((alphaTileIndex >> 16u)& 0xff)<< 8u));
-    ivec2 destCoord = tileOrigin + ivec2(gl_LocalInvocationID . xy);
-    imageStore(uDest, destCoord, coverages);
+
+    if(clipTileIndex >= 0)
+        coverages = min(coverages, imageLoad(uDest, computeTileCoord(clipTileIndex)));
+
+    imageStore(uDest, computeTileCoord(alphaTileIndex), coverages);
 }
 

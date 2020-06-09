@@ -87,13 +87,13 @@ pub enum RenderCommand {
     PopRenderTarget,
 
     // Computes backdrops for tiles, prepares any Z-buffers, and performs clipping.
-    PrepareTiles(PrepareTilesBatch),
+    PrepareClipTilesD3D11(TileBatchDataD3D11),
 
     // Marks that tile compositing is about to begin.
     BeginTileDrawing,
 
     // Draws a batch of tiles to the render target on top of the stack.
-    DrawTiles(DrawTileBatch),
+    DrawTilesD3D11(DrawTileBatchD3D11),
 
     // Presents a rendered frame.
     Finish { cpu_build_time: Duration },
@@ -115,7 +115,7 @@ pub struct TextureLocation {
 
 /// Information about a batch of tiles to be prepared (postprocessed).
 #[derive(Clone, Debug)]
-pub struct PrepareTilesBatch {
+pub struct TileBatchDataD3D11 {
     /// The ID of this batch.
     /// 
     /// The renderer should not assume that these values are consecutive.
@@ -132,6 +132,13 @@ pub struct PrepareTilesBatch {
     pub path_source: PathSource,
     /// Information about clips applied to paths, if any of the paths have clips.
     pub clipped_path_info: Option<ClippedPathInfo>,
+}
+
+/// Where a path should come from (draw or clip).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum PathSource {
+    Draw,
+    Clip,
 }
 
 /// Information about a batch of tiles to be prepared specific to the rendering mode (CPU or GPU).
@@ -217,19 +224,11 @@ pub struct PathBatchIndex(pub u32);
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct TileBatchId(pub u32);
 
-/// Where a path should come from (draw or clip).
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum PathSource {
-    Draw,
-    Clip,
-}
-
 /// Information needed to draw a batch of tiles.
 #[derive(Clone, Debug)]
-pub struct DrawTileBatch {
-    /// The ID of the tile batch. This must have been previously sent to the renderer in a
-    /// `PrepareTiles` command.
-    pub tile_batch_id: TileBatchId,
+pub struct DrawTileBatchD3D11 {
+    /// Data for the tile batch.
+    pub tile_batch_data: TileBatchDataD3D11,
 
     /// The color texture to use.
     pub color_texture: Option<TileBatchTexture>,
@@ -481,22 +480,25 @@ impl Debug for RenderCommand {
                        clip_segments.points.len(),
                        clip_segments.indices.len())
             }
-            RenderCommand::PrepareTiles(ref batch) => {
+            RenderCommand::PrepareClipTilesD3D11(ref batch) => {
                 let clipped_path_count = match batch.clipped_path_info {
                     None => 0,
                     Some(ref clipped_path_info) => clipped_path_info.clipped_path_count,
                 };
-                write!(formatter, "PrepareTiles({:?}, C {})", batch.batch_id, clipped_path_count)
+                write!(formatter,
+                       "PrepareClipTilesD3D11({:?}, C {})",
+                       batch.batch_id,
+                       clipped_path_count)
             }
             RenderCommand::PushRenderTarget(render_target_id) => {
                 write!(formatter, "PushRenderTarget({:?})", render_target_id)
             }
             RenderCommand::PopRenderTarget => write!(formatter, "PopRenderTarget"),
             RenderCommand::BeginTileDrawing => write!(formatter, "BeginTileDrawing"),
-            RenderCommand::DrawTiles(ref batch) => {
+            RenderCommand::DrawTilesD3D11(ref batch) => {
                 write!(formatter,
-                       "DrawTiles({:?}, C0 {:?}, {:?})",
-                       batch.tile_batch_id,
+                       "DrawTilesD3D11({:?}, C0 {:?}, {:?})",
+                       batch.tile_batch_data.batch_id,
                        batch.color_texture,
                        batch.blend_mode)
             }

@@ -501,7 +501,7 @@ pub struct FillComputeProgram<D> where D: Device {
     pub program: D::Program,
     pub dest_image: D::ImageParameter,
     pub area_lut_texture: D::TextureParameter,
-    pub alpha_tile_count_uniform: D::Uniform,
+    pub alpha_tile_range_uniform: D::Uniform,
     pub fills_storage_buffer: D::StorageBuffer,
     pub tiles_storage_buffer: D::StorageBuffer,
     pub alpha_tiles_storage_buffer: D::StorageBuffer,
@@ -515,7 +515,7 @@ impl<D> FillComputeProgram<D> where D: Device {
 
         let dest_image = device.get_image_parameter(&program, "Dest");
         let area_lut_texture = device.get_texture_parameter(&program, "AreaLUT");
-        let alpha_tile_count_uniform = device.get_uniform(&program, "AlphaTileCount");
+        let alpha_tile_range_uniform = device.get_uniform(&program, "AlphaTileRange");
         let fills_storage_buffer = device.get_storage_buffer(&program, "Fills", 0);
         let tiles_storage_buffer = device.get_storage_buffer(&program, "Tiles", 1);
         let alpha_tiles_storage_buffer = device.get_storage_buffer(&program, "AlphaTiles", 2);
@@ -524,7 +524,7 @@ impl<D> FillComputeProgram<D> where D: Device {
             program,
             dest_image,
             area_lut_texture,
-            alpha_tile_count_uniform,
+            alpha_tile_range_uniform,
             fills_storage_buffer,
             tiles_storage_buffer,
             alpha_tiles_storage_buffer,
@@ -746,6 +746,7 @@ pub struct PropagateProgram<D> where D: Device {
     pub program: D::Program,
     pub framebuffer_tile_size_uniform: D::Uniform,
     pub column_count_uniform: D::Uniform,
+    pub first_alpha_tile_index_uniform: D::Uniform,
     pub draw_metadata_storage_buffer: D::StorageBuffer,
     pub clip_metadata_storage_buffer: D::StorageBuffer,
     pub backdrops_storage_buffer: D::StorageBuffer,
@@ -765,6 +766,7 @@ impl<D> PropagateProgram<D> where D: Device {
 
         let framebuffer_tile_size_uniform = device.get_uniform(&program, "FramebufferTileSize");
         let column_count_uniform = device.get_uniform(&program, "ColumnCount");
+        let first_alpha_tile_index_uniform = device.get_uniform(&program, "FirstAlphaTileIndex");
         let draw_metadata_storage_buffer = device.get_storage_buffer(&program, "DrawMetadata", 0);
         let clip_metadata_storage_buffer = device.get_storage_buffer(&program, "ClipMetadata", 1);
         let backdrops_storage_buffer = device.get_storage_buffer(&program, "Backdrops", 2);
@@ -780,6 +782,7 @@ impl<D> PropagateProgram<D> where D: Device {
             program,
             framebuffer_tile_size_uniform,
             column_count_uniform,
+            first_alpha_tile_index_uniform,
             draw_metadata_storage_buffer,
             clip_metadata_storage_buffer,
             backdrops_storage_buffer,

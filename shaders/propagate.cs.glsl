@@ -29,6 +29,7 @@ layout(local_size_x = 64) in;
 
 uniform ivec2 uFramebufferTileSize;
 uniform int uColumnCount;
+uniform int uFirstAlphaTileIndex;
 
 layout(std430, binding = 0) buffer bDrawMetadata {
     // [0]: tile rect
@@ -134,11 +135,8 @@ void main() {
         uint drawTileWord = iDrawTiles[drawTileIndex * 4 + TILE_FIELD_CONTROL] & 0x00ffffff;
 
         int drawTileBackdrop = currentBackdrop;
-
-        // Allocate an alpha tile if necessary.
-        // TODO(pcwalton): Don't do this if we're just going to overwrite it later.
-        if (drawFirstFillIndex >= 0)
-            drawAlphaTileIndex = int(atomicAdd(iIndirectDrawParams[4], 1));
+        bool haveDrawAlphaMask = drawFirstFillIndex >= 0;
+        bool needNewAlphaTile = haveDrawAlphaMask;
 
         // Handle clip if necessary.
         if (clipPathIndex >= 0) {
@@ -150,31 +148,58 @@ void main() {
                                                         clipTileRect,
                                                         clipTileCoord);
 
-                clipAlphaTileIndex = int(iClipTiles[clipTileIndex * 4 + 1]);
-                uint clipTileWord = iClipTiles[clipTileIndex * 4 + 3];
+/*
+                clipAlphaTileIndex =
+                    int(iClipTiles[clipTileIndex * 4 +
+                                   TILE_FIELD_BACKDROP_ALPHA_TILE_ID] << 8) >> 8;
+                                   */
+                int thisClipAlphaTileIndex =
+                    int(iClipTiles[clipTileIndex * 4 +
+                                   TILE_FIELD_BACKDROP_ALPHA_TILE_ID] << 8) >> 8;
+
+                uint clipTileWord = iClipTiles[clipTileIndex * 4 + TILE_FIELD_CONTROL];
                 int clipTileBackdrop = int(clipTileWord) >> 24;
 
-                if (clipAlphaTileIndex >= 0 && drawAlphaTileIndex < 0 && drawTileBackdrop != 0) {
-                    // This is a solid draw tile, but there's a clip applied. Replace it with an
-                    // alpha tile pointing directly to the clip mask.
-                    drawAlphaTileIndex = clipAlphaTileIndex;
-                    drawTileBackdrop = clipTileBackdrop;
-                    clipAlphaTileIndex = -1;
-                } else if (clipAlphaTileIndex < 0 && clipTileBackdrop == 0) {
-                    // This is a blank clip tile. Cull the draw tile entirely.
-                    drawAlphaTileIndex = -1;
-                    drawTileBackdrop = 0;
+                if (thisClipAlphaTileIndex >= 0) {
+                    if (haveDrawAlphaMask) {
+                        clipAlphaTileIndex = thisClipAlphaTileIndex;
+                        needNewAlphaTile = true;
+                    } else {
+                        if (drawTileBackdrop != 0) {
+                            // This is a solid draw tile, but there's a clip applied. Replace it with an
+                            // alpha tile pointing directly to the clip mask.
+                            drawAlphaTileIndex = thisClipAlphaTileIndex;
+                            clipAlphaTileIndex = -1;
+                            needNewAlphaTile = false;
+                        } else {
+                            // No draw alpha tile index, no clip alpha tile index.
+                            drawAlphaTileIndex = -1;
+                            clipAlphaTileIndex = -1;
+                            needNewAlphaTile = false;
+                        }
+                    }
+                } else {
+                    // No clip tile.
+                    if (clipTileBackdrop == 0) {
+                        // This is a blank clip tile. Cull the draw tile entirely.
+                        drawTileBackdrop = 0;
+                        needNewAlphaTile = false;
+                    } else {
+                        needNewAlphaTile = true;
+                    }
                 }
             } else {
                 // This draw tile is outside the clip path bounding rect. Cull the draw tile.
-                drawAlphaTileIndex = -1;
                 drawTileBackdrop = 0;
+                needNewAlphaTile = false;
             }
         }
 
-        if (drawAlphaTileIndex >= 0) {
-            iAlphaTiles[drawAlphaTileIndex * 2 + 0] = drawTileIndex;
-            iAlphaTiles[drawAlphaTileIndex * 2 + 1] = -1;
+        if (needNewAlphaTile) {
+            uint drawBatchAlphaTileIndex = atomicAdd(iIndirectDrawParams[4], 1);
+            iAlphaTiles[drawBatchAlphaTileIndex * 2 + 0] = drawTileIndex;
+            iAlphaTiles[drawBatchAlphaTileIndex * 2 + 1] = clipAlphaTileIndex;
+            drawAlphaTileIndex = int(drawBatchAlphaTileIndex) + uFirstAlphaTileIndex;
         }
 
         iDrawTiles[drawTileIndex * 4 + TILE_FIELD_BACKDROP_ALPHA_TILE_ID] =
