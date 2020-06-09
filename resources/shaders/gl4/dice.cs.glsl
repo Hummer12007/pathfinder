@@ -27,6 +27,7 @@
 
 
 
+
 precision highp float;
 
 
@@ -75,24 +76,32 @@ layout(std430, binding = 4)buffer bMicrolines {
 };
 
 void emitMicroline(vec4 microline, uint pathIndex){
-    uint outputMicrolineIndex =
-        atomicAdd(iComputeIndirectParams[3], 1);
-    if(outputMicrolineIndex % 64 == 0)
-        atomicAdd(iComputeIndirectParams[0], 1);
-
-    if(outputMicrolineIndex > uMaxMicrolineCount)
+    uint segmentCount = uint(ceil(length(microline . zw - microline . xy)/ 16.0));
+    uint firstOutputMicrolineIndex =
+        atomicAdd(iComputeIndirectParams[3],
+                  segmentCount);
+    if(firstOutputMicrolineIndex + segmentCount - 1 > uMaxMicrolineCount)
         return;
 
-    ivec4 microlineSubpixels = ivec4(round(clamp(microline, - 32768.0, 32767.0)* 256.0));
-    ivec4 microlinePixels = ivec4(floor(vec4(microlineSubpixels)/ 256.0));
-    ivec4 microlineFractPixels = microlineSubpixels - microlinePixels * 256;
+    vec2 from = microline . xy;
+    for(uint segmentIndex = 0;segmentIndex < segmentCount;segmentIndex ++){
+        vec2 to = mix(microline . xy, microline . zw, float(segmentIndex + 1)/ float(segmentCount));
+        vec4 microlineSegment = vec4(from, to);
 
-    iMicrolines[outputMicrolineIndex]=
-        uvec4((uint(microlinePixels . x)& 0xffff)|(uint(microlinePixels . y)<< 16),
-              (uint(microlinePixels . z)& 0xffff)|(uint(microlinePixels . w)<< 16),
-               uint(microlineFractPixels . x)|(uint(microlineFractPixels . y)<< 8)|
-              (uint(microlineFractPixels . z)<< 16)|(uint(microlineFractPixels . w)<< 24),
-               pathIndex);
+        ivec4 microlineSubpixels =
+            ivec4(round(clamp(microlineSegment, - 32768.0, 32767.0)* 256.0));
+        ivec4 microlinePixels = ivec4(floor(vec4(microlineSubpixels)/ 256.0));
+        ivec4 microlineFractPixels = microlineSubpixels - microlinePixels * 256;
+
+        iMicrolines[firstOutputMicrolineIndex + segmentIndex]=
+            uvec4((uint(microlinePixels . x)& 0xffff)|(uint(microlinePixels . y)<< 16),
+                (uint(microlinePixels . z)& 0xffff)|(uint(microlinePixels . w)<< 16),
+                uint(microlineFractPixels . x)|(uint(microlineFractPixels . y)<< 8)|
+                (uint(microlineFractPixels . z)<< 16)|(uint(microlineFractPixels . w)<< 24),
+                pathIndex);
+
+        from = to;
+    }
 }
 
 

@@ -23,7 +23,8 @@
 
 #define BIN_INDIRECT_DRAW_PARAMS_MICROLINE_COUNT_INDEX  3
 
-#define TOLERANCE   0.25
+#define TOLERANCE           0.25
+#define MICROLINE_LENGTH    16.0
 
 precision highp float;
 
@@ -73,24 +74,32 @@ layout(std430, binding = 4) buffer bMicrolines {
 };
 
 void emitMicroline(vec4 microline, uint pathIndex) {
-    uint outputMicrolineIndex =
-        atomicAdd(iComputeIndirectParams[BIN_INDIRECT_DRAW_PARAMS_MICROLINE_COUNT_INDEX], 1);
-    if (outputMicrolineIndex % BIN_WORKGROUP_SIZE == 0)
-        atomicAdd(iComputeIndirectParams[0], 1);
-
-    if (outputMicrolineIndex > uMaxMicrolineCount)
+    uint segmentCount = uint(ceil(length(microline.zw - microline.xy) / MICROLINE_LENGTH));
+    uint firstOutputMicrolineIndex =
+        atomicAdd(iComputeIndirectParams[BIN_INDIRECT_DRAW_PARAMS_MICROLINE_COUNT_INDEX],
+                  segmentCount);
+    if (firstOutputMicrolineIndex + segmentCount - 1 > uMaxMicrolineCount)
         return;
 
-    ivec4 microlineSubpixels = ivec4(round(clamp(microline, -32768.0, 32767.0) * 256.0));
-    ivec4 microlinePixels = ivec4(floor(vec4(microlineSubpixels) / 256.0));
-    ivec4 microlineFractPixels = microlineSubpixels - microlinePixels * 256;
+    vec2 from = microline.xy;
+    for (uint segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++) {
+        vec2 to = mix(microline.xy, microline.zw, float(segmentIndex + 1) / float(segmentCount));
+        vec4 microlineSegment = vec4(from, to);
 
-    iMicrolines[outputMicrolineIndex] =
-        uvec4((uint(microlinePixels.x) & 0xffff) | (uint(microlinePixels.y) << 16),
-              (uint(microlinePixels.z) & 0xffff) | (uint(microlinePixels.w) << 16),
-               uint(microlineFractPixels.x)        | (uint(microlineFractPixels.y) << 8) |
-              (uint(microlineFractPixels.z) << 16) | (uint(microlineFractPixels.w) << 24),
-               pathIndex);
+        ivec4 microlineSubpixels =
+            ivec4(round(clamp(microlineSegment, -32768.0, 32767.0) * 256.0));
+        ivec4 microlinePixels = ivec4(floor(vec4(microlineSubpixels) / 256.0));
+        ivec4 microlineFractPixels = microlineSubpixels - microlinePixels * 256;
+
+        iMicrolines[firstOutputMicrolineIndex + segmentIndex] =
+            uvec4((uint(microlinePixels.x) & 0xffff) | (uint(microlinePixels.y) << 16),
+                (uint(microlinePixels.z) & 0xffff) | (uint(microlinePixels.w) << 16),
+                uint(microlineFractPixels.x)        | (uint(microlineFractPixels.y) << 8) |
+                (uint(microlineFractPixels.z) << 16) | (uint(microlineFractPixels.w) << 24),
+                pathIndex);
+
+        from = to;
+    }
 }
 
 // See Kaspar Fischer, "Piecewise Linear Approximation of Bézier Curves", 2000.
