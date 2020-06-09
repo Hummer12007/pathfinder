@@ -10,7 +10,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Sum up backdrops to propagate fills across tiles.
+// Sum up backdrops to propagate fills across tiles, and allocate alpha tiles.
 
 #extension GL_GOOGLE_include_directive : enable
 
@@ -72,19 +72,15 @@ layout(std430, binding = 4) buffer bClipTiles {
     restrict uint iClipTiles[];
 };
 
-layout(std430, binding = 5) buffer bClipVertexBuffer {
-    restrict ivec4 iClipVertexBuffer[];
-};
-
-layout(std430, binding = 6) buffer bZBuffer {
+layout(std430, binding = 5) buffer bZBuffer {
     restrict int iZBuffer[];
 };
 
-layout(std430, binding = 7) buffer bFirstTileMap {
+layout(std430, binding = 6) buffer bFirstTileMap {
     restrict int iFirstTileMap[];
 };
 
-layout(std430, binding = 8) buffer bIndirectDrawParams {
+layout(std430, binding = 7) buffer bIndirectDrawParams {
     // [0]: vertexCount (6)
     // [1]: instanceCount (of fills)
     // [2]: vertexStart (0)
@@ -93,7 +89,7 @@ layout(std430, binding = 8) buffer bIndirectDrawParams {
     restrict uint iIndirectDrawParams[];
 };
 
-layout(std430, binding = 9) buffer bAlphaTiles {
+layout(std430, binding = 8) buffer bAlphaTiles {
     // [0]: alpha tile index
     // [1]: clip tile index
     restrict uint iAlphaTiles[];
@@ -131,6 +127,7 @@ void main() {
         uint drawTileIndex = calculateTileIndex(drawTileBufferOffset, drawTileRect, drawTileCoord);
 
         int drawAlphaTileIndex = -1;
+        int clipAlphaTileIndex = -1;
         int drawFirstFillIndex = int(iDrawTiles[drawTileIndex * 4 + TILE_FIELD_FIRST_FILL_ID]);
         int drawBackdropDelta =
             int(iDrawTiles[drawTileIndex * 4 + TILE_FIELD_BACKDROP_ALPHA_TILE_ID]) >> 24;
@@ -146,7 +143,6 @@ void main() {
         // Handle clip if necessary.
         if (clipPathIndex >= 0) {
             uvec2 tileCoord = drawTileCoord + drawTileRect.xy;
-            ivec4 clipTileData = ivec4(-1, 0, -1, 0);
             if (all(bvec4(greaterThanEqual(tileCoord, clipTileRect.xy),
                           lessThan        (tileCoord, clipTileRect.zw)))) {
                 uvec2 clipTileCoord = tileCoord - clipTileRect.xy;
@@ -154,27 +150,16 @@ void main() {
                                                         clipTileRect,
                                                         clipTileCoord);
 
-                int clipAlphaTileIndex = int(iClipTiles[clipTileIndex * 4 + 1]);
+                clipAlphaTileIndex = int(iClipTiles[clipTileIndex * 4 + 1]);
                 uint clipTileWord = iClipTiles[clipTileIndex * 4 + 3];
                 int clipTileBackdrop = int(clipTileWord) >> 24;
 
-                if (clipAlphaTileIndex >= 0 && drawAlphaTileIndex >= 0) {
-                    // Hard case: We have an alpha tile and a clip tile with masks. Add a job to
-                    // combine the two masks. Because the mask combining step applies the
-                    // backdrops, zero out the backdrop in the draw tile itself so that we don't
-                    // double-count it.
-                    clipTileData = ivec4(drawAlphaTileIndex,
-                                         drawTileBackdrop,
-                                         clipAlphaTileIndex,
-                                         clipTileBackdrop);
-                    drawTileBackdrop = 0;
-                } else if (clipAlphaTileIndex >= 0 &&
-                           drawAlphaTileIndex < 0 &&
-                           drawTileBackdrop != 0) {
+                if (clipAlphaTileIndex >= 0 && drawAlphaTileIndex < 0 && drawTileBackdrop != 0) {
                     // This is a solid draw tile, but there's a clip applied. Replace it with an
                     // alpha tile pointing directly to the clip mask.
                     drawAlphaTileIndex = clipAlphaTileIndex;
                     drawTileBackdrop = clipTileBackdrop;
+                    clipAlphaTileIndex = -1;
                 } else if (clipAlphaTileIndex < 0 && clipTileBackdrop == 0) {
                     // This is a blank clip tile. Cull the draw tile entirely.
                     drawAlphaTileIndex = -1;
@@ -185,8 +170,6 @@ void main() {
                 drawAlphaTileIndex = -1;
                 drawTileBackdrop = 0;
             }
-
-            iClipVertexBuffer[drawTileIndex] = clipTileData;
         }
 
         if (drawAlphaTileIndex >= 0) {

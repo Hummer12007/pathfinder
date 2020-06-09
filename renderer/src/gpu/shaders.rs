@@ -751,7 +751,6 @@ pub struct PropagateProgram<D> where D: Device {
     pub backdrops_storage_buffer: D::StorageBuffer,
     pub draw_tiles_storage_buffer: D::StorageBuffer,
     pub clip_tiles_storage_buffer: D::StorageBuffer,
-    pub clip_vertex_storage_buffer: D::StorageBuffer,
     pub z_buffer_storage_buffer: D::StorageBuffer,
     pub first_tile_map_storage_buffer: D::StorageBuffer,
     pub indirect_draw_params_storage_buffer: D::StorageBuffer,
@@ -771,13 +770,11 @@ impl<D> PropagateProgram<D> where D: Device {
         let backdrops_storage_buffer = device.get_storage_buffer(&program, "Backdrops", 2);
         let draw_tiles_storage_buffer = device.get_storage_buffer(&program, "DrawTiles", 3);
         let clip_tiles_storage_buffer = device.get_storage_buffer(&program, "ClipTiles", 4);
-        let clip_vertex_storage_buffer =
-            device.get_storage_buffer(&program, "ClipVertexBuffer", 5);
-        let z_buffer_storage_buffer = device.get_storage_buffer(&program, "ZBuffer", 6);
-        let first_tile_map_storage_buffer = device.get_storage_buffer(&program, "FirstTileMap", 7);
+        let z_buffer_storage_buffer = device.get_storage_buffer(&program, "ZBuffer", 5);
+        let first_tile_map_storage_buffer = device.get_storage_buffer(&program, "FirstTileMap", 6);
         let indirect_draw_params_storage_buffer =
-            device.get_storage_buffer(&program, "IndirectDrawParams", 8);
-        let alpha_tiles_storage_buffer = device.get_storage_buffer(&program, "AlphaTiles", 9);
+            device.get_storage_buffer(&program, "IndirectDrawParams", 7);
+        let alpha_tiles_storage_buffer = device.get_storage_buffer(&program, "AlphaTiles", 8);
 
         PropagateProgram {
             program,
@@ -788,7 +785,6 @@ impl<D> PropagateProgram<D> where D: Device {
             backdrops_storage_buffer,
             draw_tiles_storage_buffer,
             clip_tiles_storage_buffer,
-            clip_vertex_storage_buffer,
             z_buffer_storage_buffer,
             first_tile_map_storage_buffer,
             indirect_draw_params_storage_buffer,

@@ -1441,6 +1441,7 @@ impl<D> Renderer<D> where D: Device {
             }
         }
 
+        /*
         // Perform clipping if necessary.
         if let (Some(clip_storage_ids), Some(clipped_path_info)) =
                 (clip_storage_ids.as_ref(), batch.clipped_path_info.as_ref()) {
@@ -1452,6 +1453,7 @@ impl<D> Renderer<D> where D: Device {
 
             self.clip_tiles(clip_storage_ids.vertices, clipped_path_info.max_clipped_tile_count);
         }
+        */
     }
 
     fn tile_transform(&self) -> Transform4F {
@@ -1551,19 +1553,13 @@ impl<D> Renderer<D> where D: Device {
                                             .buffer;
             let clip_tile_buffer = &self.back_frame
                                         .storage_allocators
-                                        .tile_vertex
+                                        .tiles_d3d11
                                         .get(clip_storage_ids.tiles)
-                                        .vertex_buffer;
-            let clip_vertex_storage = self.back_frame
-                                          .storage_allocators
-                                          .clip_vertex
-                                          .get(clip_storage_ids.vertices);
+                                        .buffer;
             storage_buffers.push((&propagate_program.clip_metadata_storage_buffer,
                                   clip_metadata_buffer));
             storage_buffers.push((&propagate_program.clip_tiles_storage_buffer,
                                   clip_tile_buffer));
-            storage_buffers.push((&propagate_program.clip_vertex_storage_buffer,
-                                  &clip_vertex_storage.vertex_buffer));
         }
 
         let timer_query = self.timer_query_cache.alloc(&self.device);

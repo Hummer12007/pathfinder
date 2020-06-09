@@ -74,19 +74,15 @@ layout(std430, binding = 4)buffer bClipTiles {
     restrict uint iClipTiles[];
 };
 
-layout(std430, binding = 5)buffer bClipVertexBuffer {
-    restrict ivec4 iClipVertexBuffer[];
-};
-
-layout(std430, binding = 6)buffer bZBuffer {
+layout(std430, binding = 5)buffer bZBuffer {
     restrict int iZBuffer[];
 };
 
-layout(std430, binding = 7)buffer bFirstTileMap {
+layout(std430, binding = 6)buffer bFirstTileMap {
     restrict int iFirstTileMap[];
 };
 
-layout(std430, binding = 8)buffer bIndirectDrawParams {
+layout(std430, binding = 7)buffer bIndirectDrawParams {
 
 
 
@@ -95,7 +91,7 @@ layout(std430, binding = 8)buffer bIndirectDrawParams {
     restrict uint iIndirectDrawParams[];
 };
 
-layout(std430, binding = 9)buffer bAlphaTiles {
+layout(std430, binding = 8)buffer bAlphaTiles {
 
 
     restrict uint iAlphaTiles[];
@@ -133,6 +129,7 @@ void main(){
         uint drawTileIndex = calculateTileIndex(drawTileBufferOffset, drawTileRect, drawTileCoord);
 
         int drawAlphaTileIndex = - 1;
+        int clipAlphaTileIndex = - 1;
         int drawFirstFillIndex = int(iDrawTiles[drawTileIndex * 4 + 1]);
         int drawBackdropDelta =
             int(iDrawTiles[drawTileIndex * 4 + 2])>> 24;
@@ -148,7 +145,6 @@ void main(){
 
         if(clipPathIndex >= 0){
             uvec2 tileCoord = drawTileCoord + drawTileRect . xy;
-            ivec4 clipTileData = ivec4(- 1, 0, - 1, 0);
             if(all(bvec4(greaterThanEqual(tileCoord, clipTileRect . xy),
                           lessThan(tileCoord, clipTileRect . zw)))){
                 uvec2 clipTileCoord = tileCoord - clipTileRect . xy;
@@ -156,27 +152,16 @@ void main(){
                                                         clipTileRect,
                                                         clipTileCoord);
 
-                int clipAlphaTileIndex = int(iClipTiles[clipTileIndex * 4 + 1]);
+                clipAlphaTileIndex = int(iClipTiles[clipTileIndex * 4 + 1]);
                 uint clipTileWord = iClipTiles[clipTileIndex * 4 + 3];
                 int clipTileBackdrop = int(clipTileWord)>> 24;
 
-                if(clipAlphaTileIndex >= 0 && drawAlphaTileIndex >= 0){
-
-
-
-
-                    clipTileData = ivec4(drawAlphaTileIndex,
-                                         drawTileBackdrop,
-                                         clipAlphaTileIndex,
-                                         clipTileBackdrop);
-                    drawTileBackdrop = 0;
-                } else if(clipAlphaTileIndex >= 0 &&
-                           drawAlphaTileIndex < 0 &&
-                           drawTileBackdrop != 0){
+                if(clipAlphaTileIndex >= 0 && drawAlphaTileIndex < 0 && drawTileBackdrop != 0){
 
 
                     drawAlphaTileIndex = clipAlphaTileIndex;
                     drawTileBackdrop = clipTileBackdrop;
+                    clipAlphaTileIndex = - 1;
                 } else if(clipAlphaTileIndex < 0 && clipTileBackdrop == 0){
 
                     drawAlphaTileIndex = - 1;
@@ -187,8 +172,6 @@ void main(){
                 drawAlphaTileIndex = - 1;
                 drawTileBackdrop = 0;
             }
-
-            iClipVertexBuffer[drawTileIndex]= clipTileData;
         }
 
         if(drawAlphaTileIndex >= 0){
