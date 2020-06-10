@@ -143,9 +143,7 @@ pub struct Renderer<D> where D: Device {
     allocated_fill_count: u32,
 
     // Frames
-    front_frame: Frame<D>,
-    back_frame: Frame<D>,
-    front_frame_fence: Option<D::Fence>,
+    frame: Frame<D>,
 
     // Rendering state
     texture_cache: TextureCache<D>,
@@ -236,24 +234,15 @@ impl<D> Renderer<D> where D: Device {
                                                        window_size,
                                                        options.level);
 
-        let front_frame = Frame::new(&device,
-                                     &blit_program,
-                                     &d3d11_programs,
-                                     &clear_program,
-                                     &reprojection_program,
-                                     &stencil_program,
-                                     &quad_vertex_positions_buffer,
-                                     &quad_vertex_indices_buffer,
-                                     window_size);
-        let back_frame = Frame::new(&device,
-                                    &blit_program,
-                                    &d3d11_programs,
-                                    &clear_program,
-                                    &reprojection_program,
-                                    &stencil_program,
-                                    &quad_vertex_positions_buffer,
-                                    &quad_vertex_indices_buffer,
-                                    window_size);
+        let frame = Frame::new(&device,
+                               &blit_program,
+                               &d3d11_programs,
+                               &clear_program,
+                               &reprojection_program,
+                               &stencil_program,
+                               &quad_vertex_positions_buffer,
+                               &quad_vertex_indices_buffer,
+                               window_size);
 
         Renderer {
             device,
@@ -279,9 +268,7 @@ impl<D> Renderer<D> where D: Device {
             allocated_fill_count: INITIAL_ALLOCATED_FILL_COUNT,
             allocated_microline_count: INITIAL_ALLOCATED_MICROLINE_COUNT,
 
-            front_frame,
-            back_frame,
-            front_frame_fence: None,
+            frame,
 
             allocator,
 
@@ -305,13 +292,13 @@ impl<D> Renderer<D> where D: Device {
     }
 
     pub fn begin_scene(&mut self) {
-        self.back_frame.framebuffer_flags = FramebufferFlags::empty();
+        self.frame.framebuffer_flags = FramebufferFlags::empty();
 
         self.device.begin_commands();
         self.current_timer = Some(PendingTimer::new());
         self.stats = RenderStats::default();
 
-        self.back_frame.alpha_tile_count = 0;
+        self.frame.alpha_tile_count = 0;
     }
 
     pub fn render_command(&mut self, command: &RenderCommand) {
@@ -349,7 +336,7 @@ impl<D> Renderer<D> where D: Device {
             RenderCommand::DrawTilesD3D11(ref batch) => {
                 let tile_batch_id = batch.tile_batch_data.batch_id;
                 self.prepare_tiles_d3d11(&batch.tile_batch_data);
-                let batch_info = self.back_frame.tile_batch_info[tile_batch_id.0 as usize];
+                let batch_info = self.frame.tile_batch_info[tile_batch_id.0 as usize].clone();
                 self.draw_tiles(batch_info.tile_count,
                                 batch.color_texture,
                                 batch.blend_mode,
@@ -367,24 +354,16 @@ impl<D> Renderer<D> where D: Device {
         self.clear_dest_framebuffer_if_necessary();
         self.blit_intermediate_dest_framebuffer_if_necessary();
 
-        let old_front_frame_fence = self.front_frame_fence.take();
-        self.front_frame_fence = Some(self.device.add_fence());
         self.device.end_commands();
 
         self.stats.gpu_bytes_allocated += self.allocator.bytes_allocated();
 
-        self.back_frame.tile_batch_info.clear();
+        self.frame.tile_batch_info.clear();
 
         if let Some(timer) = self.current_timer.take() {
             self.pending_timers.push_back(timer);
         }
         self.current_cpu_build_time = None;
-
-        if let Some(old_front_frame_fence) = old_front_frame_fence {
-            self.device.wait_for_fence(&old_front_frame_fence);
-        }
-
-        mem::swap(&mut self.front_frame, &mut self.back_frame);
     }
 
     fn start_rendering(&mut self,
@@ -478,8 +457,8 @@ impl<D> Renderer<D> where D: Device {
     }
 
     fn reallocate_alpha_tile_pages_if_necessary(&mut self, copy_existing: bool) {
-        let alpha_tile_pages_needed = ((self.back_frame.alpha_tile_count + 0xffff) >> 16) as u32;
-        if let Some(ref mask_storage) = self.back_frame.mask_storage {
+        let alpha_tile_pages_needed = ((self.frame.alpha_tile_count + 0xffff) >> 16) as u32;
+        if let Some(ref mask_storage) = self.frame.mask_storage {
             if alpha_tile_pages_needed <= mask_storage.allocated_page_count {
                 return;
             }
@@ -491,8 +470,8 @@ impl<D> Renderer<D> where D: Device {
                              MASK_FRAMEBUFFER_HEIGHT * alpha_tile_pages_needed as i32);
         let format = self.mask_texture_format();
         let mask_texture = self.device.create_texture(format, new_size);
-        let old_mask_storage = self.back_frame.mask_storage.take();
-        self.back_frame.mask_storage = Some(MaskStorage {
+        let old_mask_storage = self.frame.mask_storage.take();
+        self.frame.mask_storage = Some(MaskStorage {
             framebuffer: self.device.create_framebuffer(mask_texture),
             allocated_page_count: alpha_tile_pages_needed,
         });
@@ -509,13 +488,13 @@ impl<D> Renderer<D> where D: Device {
         self.device.begin_timer_query(&timer_query);
 
         self.device.draw_elements(6, &RenderState {
-            target: &RenderTarget::Framebuffer(&self.back_frame
+            target: &RenderTarget::Framebuffer(&self.frame
                                                     .mask_storage
                                                     .as_ref()
                                                     .unwrap()
                                                     .framebuffer),
             program: &self.blit_program.program,
-            vertex_array: &self.back_frame.blit_vertex_array.vertex_array,
+            vertex_array: &self.frame.blit_vertex_array.vertex_array,
             primitive: Primitive::Triangles,
             textures: &[(&self.blit_program.src_texture, old_mask_texture)],
             images: &[],
@@ -621,7 +600,7 @@ impl<D> Renderer<D> where D: Device {
             texels.push(f16::default())
         }
 
-        let texture = &mut self.back_frame.texture_metadata_texture;
+        let texture = &mut self.frame.texture_metadata_texture;
         let width = TEXTURE_METADATA_TEXTURE_WIDTH;
         let height = texels.len() as i32 / (4 * TEXTURE_METADATA_TEXTURE_WIDTH);
         let rect = RectI::new(Vector2I::zero(), Vector2I::new(width, height));
@@ -754,7 +733,7 @@ impl<D> Renderer<D> where D: Device {
 
     fn ensure_index_buffer(&mut self, mut length: usize) {
         length = length.next_power_of_two();
-        if self.back_frame.quads_vertex_indices_length >= length {
+        if self.frame.quads_vertex_indices_length >= length {
             return;
         }
 
@@ -767,11 +746,11 @@ impl<D> Renderer<D> where D: Device {
             ]);
         }
 
-        self.device.allocate_buffer(&self.back_frame.quads_vertex_indices_buffer,
+        self.device.allocate_buffer(&self.frame.quads_vertex_indices_buffer,
                                     BufferData::Memory(&indices),
                                     BufferTarget::Index);
 
-        self.back_frame.quads_vertex_indices_length = length;
+        self.frame.quads_vertex_indices_length = length;
     }
 
     fn dice_segments(&mut self,
@@ -986,27 +965,25 @@ impl<D> Renderer<D> where D: Device {
 
         self.stats.fill_count += fill_batch.len();
 
-        let preserve_alpha_mask_contents = self.back_frame.alpha_tile_count > 0;
+        let preserve_alpha_mask_contents = self.frame.alpha_tile_count > 0;
 
-        self.back_frame.pending_fills.reserve(fill_batch.len());
+        self.frame.pending_fills.reserve(fill_batch.len());
         for fill in fill_batch {
-            self.back_frame.alpha_tile_count =
-                self.back_frame.alpha_tile_count.max(fill.link + 1);
-            self.back_frame.pending_fills.push(*fill);
+            self.frame.alpha_tile_count = self.frame.alpha_tile_count.max(fill.link + 1);
+            self.frame.pending_fills.push(*fill);
         }
 
         self.reallocate_alpha_tile_pages_if_necessary(preserve_alpha_mask_contents);
 
-        if self.back_frame.buffered_fills.len() + self.back_frame.pending_fills.len() >
-                MAX_FILLS_PER_BATCH {
+        if self.frame.buffered_fills.len() + self.frame.pending_fills.len() > MAX_FILLS_PER_BATCH {
             self.draw_buffered_fills();
         }
 
-        self.back_frame.buffered_fills.extend(self.back_frame.pending_fills.drain(..));
+        self.frame.buffered_fills.extend(self.frame.pending_fills.drain(..));
     }
 
     fn draw_buffered_fills(&mut self) {
-        if self.back_frame.buffered_fills.is_empty() {
+        if self.frame.buffered_fills.is_empty() {
             return;
         }
 
@@ -1147,10 +1124,7 @@ impl<D> Renderer<D> where D: Device {
 
         let fill_vertex_buffer = self.allocator.get(fill_vertex_buffer_id);
 
-        let mask_storage = self.back_frame
-                               .mask_storage
-                               .as_ref()
-                               .expect("Where's the mask storage?");
+        let mask_storage = self.frame.mask_storage.as_ref().expect("Where's the mask storage?");
         let image_texture = self.device.framebuffer_texture(&mask_storage.framebuffer);
 
         let tiles_d3d11_buffer = self.allocator.get(tiles_d3d11_buffer_id);
@@ -1187,7 +1161,7 @@ impl<D> Renderer<D> where D: Device {
         self.current_timer.as_mut().unwrap().raster_times.push(TimerFuture::new(timer_query));
         self.stats.drawcall_count += 1;
 
-        self.back_frame.framebuffer_flags.insert(FramebufferFlags::MASK_FRAMEBUFFER_IS_DIRTY);
+        self.frame.framebuffer_flags.insert(FramebufferFlags::MASK_FRAMEBUFFER_IS_DIRTY);
     }
 
     /*
@@ -1287,8 +1261,7 @@ impl<D> Renderer<D> where D: Device {
         let clip_buffer_ids = match batch.clipped_path_info {
             Some(ref clipped_path_info) => {
                 let clip_batch_id = clipped_path_info.clip_batch_id;
-                let clip_tile_batch_info =
-                    self.back_frame.tile_batch_info[clip_batch_id.0 as usize];
+                let clip_tile_batch_info = &self.frame.tile_batch_info[clip_batch_id.0 as usize];
                 let (metadata, tiles) = match clip_tile_batch_info.level_info {
                     TileBatchLevelInfo::D3D11(ref d3d11_info) => {
                         (d3d11_info.propagate_metadata_buffer_id, d3d11_info.tiles_d3d11_buffer_id)
@@ -1388,7 +1361,7 @@ impl<D> Renderer<D> where D: Device {
         };
 
         // Record tile batch info.
-        self.back_frame.tile_batch_info.insert(batch.batch_id.0 as usize, TileBatchInfo {
+        self.frame.tile_batch_info.insert(batch.batch_id.0 as usize, TileBatchInfo {
             tile_count: batch.tile_count,
             z_buffer_id,
             level_info,
@@ -1488,7 +1461,7 @@ impl<D> Renderer<D> where D: Device {
                  UniformData::IVec2(self.framebuffer_tile_size().0)),
                 (&propagate_program.column_count_uniform, UniformData::Int(column_count as i32)),
                 (&propagate_program.first_alpha_tile_index_uniform,
-                 UniformData::Int(self.back_frame.alpha_tile_count as i32)),
+                 UniformData::Int(self.frame.alpha_tile_count as i32)),
             ],
             storage_buffers: &storage_buffers,
         });
@@ -1508,9 +1481,9 @@ impl<D> Renderer<D> where D: Device {
         let batch_alpha_tile_count =
             fill_indirect_draw_params[FILL_INDIRECT_DRAW_PARAMS_ALPHA_TILE_COUNT_INDEX];
 
-        let alpha_tile_start = self.back_frame.alpha_tile_count;
-        self.back_frame.alpha_tile_count += batch_alpha_tile_count;
-        let alpha_tile_end = self.back_frame.alpha_tile_count;
+        let alpha_tile_start = self.frame.alpha_tile_count;
+        self.frame.alpha_tile_count += batch_alpha_tile_count;
+        let alpha_tile_end = self.frame.alpha_tile_count;
 
         PropagateTilesInfo { alpha_tile_range: alpha_tile_start..alpha_tile_end }
     }
@@ -1834,7 +1807,7 @@ impl<D> Renderer<D> where D: Device {
         //let z_buffer_texture = self.device.framebuffer_texture(&z_buffer.framebuffer);
 
         textures.push((&tile_program.texture_metadata_texture,
-                       &self.back_frame.texture_metadata_texture));
+                       &self.frame.texture_metadata_texture));
         //textures.push((&tile_program.z_buffer_texture, z_buffer_texture));
 
         /*
@@ -1849,7 +1822,7 @@ impl<D> Renderer<D> where D: Device {
                        UniformData::IVec2(I32x2::new(TEXTURE_METADATA_TEXTURE_WIDTH,
                                                      TEXTURE_METADATA_TEXTURE_HEIGHT))));
 
-        if let Some(ref mask_storage) = self.back_frame.mask_storage {
+        if let Some(ref mask_storage) = self.frame.mask_storage {
             let mask_texture = self.device.framebuffer_texture(&mask_storage.framebuffer);
             uniforms.push((&tile_program.mask_texture_size_0_uniform,
                            UniformData::Vec2(self.device.texture_size(mask_texture).to_f32().0)));
@@ -1967,7 +1940,7 @@ impl<D> Renderer<D> where D: Device {
     }
 
     fn draw_stencil(&mut self, quad_positions: &[Vector4F]) {
-        self.device.allocate_buffer(&self.back_frame.stencil_vertex_array.vertex_buffer,
+        self.device.allocate_buffer(&self.frame.stencil_vertex_array.vertex_buffer,
                                     BufferData::Memory(quad_positions),
                                     BufferTarget::Vertex);
 
@@ -1977,14 +1950,14 @@ impl<D> Renderer<D> where D: Device {
         for index in 1..(quad_positions.len() as u32 - 1) {
             indices.extend_from_slice(&[0, index as u32, index + 1]);
         }
-        self.device.allocate_buffer(&self.back_frame.stencil_vertex_array.index_buffer,
+        self.device.allocate_buffer(&self.frame.stencil_vertex_array.index_buffer,
                                     BufferData::Memory(&indices),
                                     BufferTarget::Index);
 
         self.device.draw_elements(indices.len() as u32, &RenderState {
             target: &self.draw_render_target(),
             program: &self.stencil_program.program,
-            vertex_array: &self.back_frame.stencil_vertex_array.vertex_array,
+            vertex_array: &self.frame.stencil_vertex_array.vertex_array,
             primitive: Primitive::Triangles,
             textures: &[],
             images: &[],
@@ -2018,7 +1991,7 @@ impl<D> Renderer<D> where D: Device {
         self.device.draw_elements(6, &RenderState {
             target: &self.draw_render_target(),
             program: &self.reprojection_program.program,
-            vertex_array: &self.back_frame.reprojection_vertex_array.vertex_array,
+            vertex_array: &self.frame.reprojection_vertex_array.vertex_array,
             primitive: Primitive::Triangles,
             textures: &[(&self.reprojection_program.texture, texture)],
             images: &[],
@@ -2052,7 +2025,7 @@ impl<D> Renderer<D> where D: Device {
             }
             None => {
                 if self.flags.contains(RendererFlags::INTERMEDIATE_DEST_FRAMEBUFFER_NEEDED) {
-                    RenderTarget::Framebuffer(&self.back_frame.intermediate_dest_framebuffer)
+                    RenderTarget::Framebuffer(&self.frame.intermediate_dest_framebuffer)
                 } else {
                     match self.dest_framebuffer {
                         DestFramebuffer::Default { .. } => RenderTarget::Default,
@@ -2162,9 +2135,7 @@ impl<D> Renderer<D> where D: Device {
             Some(background_color) => background_color,
         };
 
-        if self.back_frame
-               .framebuffer_flags
-               .contains(FramebufferFlags::DEST_FRAMEBUFFER_IS_DIRTY) {
+        if self.frame.framebuffer_flags.contains(FramebufferFlags::DEST_FRAMEBUFFER_IS_DIRTY) {
             return;
         }
 
@@ -2179,7 +2150,7 @@ impl<D> Renderer<D> where D: Device {
         self.device.draw_elements(6, &RenderState {
             target: &RenderTarget::Default,
             program: &self.clear_program.program,
-            vertex_array: &self.back_frame.clear_vertex_array.vertex_array,
+            vertex_array: &self.frame.clear_vertex_array.vertex_array,
             primitive: Primitive::Triangles,
             textures: &[],
             images: &[],
@@ -2201,13 +2172,13 @@ impl<D> Renderer<D> where D: Device {
 
         let textures = [
             (&self.blit_program.src_texture,
-             self.device.framebuffer_texture(&self.back_frame.intermediate_dest_framebuffer))
+             self.device.framebuffer_texture(&self.frame.intermediate_dest_framebuffer))
         ];
 
         self.device.draw_elements(6, &RenderState {
             target: &RenderTarget::Default,
             program: &self.blit_program.program,
-            vertex_array: &self.back_frame.blit_vertex_array.vertex_array,
+            vertex_array: &self.frame.blit_vertex_array.vertex_array,
             primitive: Primitive::Triangles,
             textures: &textures[..],
             images: &[],
@@ -2254,9 +2225,7 @@ impl<D> Renderer<D> where D: Device {
                     .must_preserve_contents
             }
             None => {
-                self.back_frame
-                    .framebuffer_flags
-                    .contains(FramebufferFlags::DEST_FRAMEBUFFER_IS_DIRTY)
+                self.frame.framebuffer_flags.contains(FramebufferFlags::DEST_FRAMEBUFFER_IS_DIRTY)
             }
         };
 
@@ -2279,9 +2248,7 @@ impl<D> Renderer<D> where D: Device {
                     .must_preserve_contents = true;
             }
             None => {
-                self.back_frame
-                    .framebuffer_flags
-                    .insert(FramebufferFlags::DEST_FRAMEBUFFER_IS_DIRTY);
+                self.frame.framebuffer_flags.insert(FramebufferFlags::DEST_FRAMEBUFFER_IS_DIRTY);
             }
         }
     }
@@ -2306,7 +2273,7 @@ impl<D> Renderer<D> where D: Device {
     }
 
     fn mask_viewport(&self) -> RectI {
-        let page_count = match self.back_frame.mask_storage {
+        let page_count = match self.frame.mask_storage {
             Some(ref mask_storage) => mask_storage.allocated_page_count as i32,
             None => 0,
         };
@@ -2401,20 +2368,20 @@ impl<D> Frame<D> where D: Device {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct TileBatchInfo {
     tile_count: u32,
     z_buffer_id: BufferID,
     level_info: TileBatchLevelInfo,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum TileBatchLevelInfo {
     D3D9 { tile_vertex_storage_id: StorageID },
     D3D11(TileBatchInfoD3D11),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct TileBatchInfoD3D11 {
     tiles_d3d11_buffer_id: BufferID,
     propagate_metadata_buffer_id: BufferID,
@@ -2671,7 +2638,7 @@ fn pixel_size_to_tile_size(pixel_size: Vector2I) -> Vector2I {
     vec2i(size.x() / TILE_WIDTH as i32, size.y() / TILE_HEIGHT as i32)
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct ClipBufferIDs {
     metadata: Option<BufferID>,
     tiles: BufferID,

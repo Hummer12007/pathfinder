@@ -69,12 +69,13 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         id
     }
 
-    pub(crate) fn free(&mut self, id: BufferID) {
+    pub(crate) fn free(&mut self, mut id: BufferID) {
         let allocation = self.buffers_in_use
                              .remove(&id)
                              .expect("Attempted to free unallocated buffer!");
         self.bytes_allocated -= allocation.size;
         self.bytes_committed -= allocation.size;
+        id.0 = !0;
     }
 
     pub(crate) fn get(&self, id: BufferID) -> &D::Buffer {
