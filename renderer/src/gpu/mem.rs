@@ -264,8 +264,9 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         ids.sort();
         for id in ids {
             let allocation = &self.textures_in_use[&id];
-            println!("id {:?}: {:?}x{:?} {:?} ({:?} B)",
+            println!("id {:?}: {:?} {:?}x{:?} {:?} ({:?} B)",
                      id,
+                     allocation.tag,
                      allocation.descriptor.width,
                      allocation.descriptor.height,
                      allocation.descriptor.format,
@@ -277,8 +278,9 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         ids.sort();
         for id in ids {
             let allocation = &self.framebuffers_in_use[&id];
-            println!("id {:?}: {:?}x{:?} {:?} ({:?} B)",
+            println!("id {:?}: {:?} {:?}x{:?} {:?} ({:?} B)",
                      id,
+                     allocation.tag,
                      allocation.descriptor.width,
                      allocation.descriptor.height,
                      allocation.descriptor.format,
