@@ -17,12 +17,77 @@ use crate::gpu::shaders::{FillProgram, FillVertexArray, TileProgram, TileVertexA
 use crate::gpu_data::{AlphaTileD3D11, BackdropInfo, Clip, DiceMetadata, Fill, Microline};
 use crate::gpu_data::{PropagateMetadata, TileD3D11, TileObjectPrimitive, TilePathInfo};
 use crate::tiles::{TILE_HEIGHT, TILE_WIDTH};
+use fxhash::FxHashMap;
 use pathfinder_geometry::vector::{Vector2I, vec2i};
 use pathfinder_gpu::{BufferData, BufferTarget, BufferUploadMode, Device};
 use pathfinder_gpu::{TextureFormat, TextureSamplingFlags};
 use std::marker::PhantomData;
 use std::mem;
 use std::default::Default;
+
+const MIN_SIZE_CLASS: usize = 4;                // 16 bytes
+const MAX_FREE_SIZE: u64 = 32 * 1024 * 1024;    // 32 MB
+
+pub(crate) struct GPUMemoryAllocator<D> where D: Device {
+    buffers_in_use: FxHashMap<BufferID, BufferAllocation<D>>,
+    bytes_committed: u64,
+    bytes_allocated: u64,
+    next_id: BufferID,
+}
+
+struct BufferAllocation<D> where D: Device {
+    buffer: D::Buffer,
+    size: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct BufferID(pub(crate) u32);
+
+impl<D> GPUMemoryAllocator<D> where D: Device {
+    pub(crate) fn new() -> GPUMemoryAllocator<D> {
+        GPUMemoryAllocator {
+            buffers_in_use: FxHashMap::default(),
+            bytes_committed: 0,
+            bytes_allocated: 0,
+            next_id: BufferID(0),
+        }
+    }
+
+    pub(crate) fn allocate<T>(&mut self, device: &D, size: u64) -> BufferID {
+        let buffer = device.create_buffer(BufferUploadMode::Dynamic);
+        device.allocate_buffer::<T>(&buffer,
+                                     BufferData::Uninitialized(size as usize),
+                                     BufferTarget::Storage);
+        let id = self.next_id;
+        self.next_id.0 += 1;
+
+        let byte_size = size * mem::size_of::<T>() as u64;
+        self.buffers_in_use.insert(id, BufferAllocation { buffer, size: byte_size });
+        self.bytes_allocated += byte_size;
+        self.bytes_committed += byte_size;
+
+        id
+    }
+
+    pub(crate) fn free(&mut self, id: BufferID) {
+        let allocation = self.buffers_in_use
+                             .remove(&id)
+                             .expect("Attempted to free unallocated buffer!");
+        self.bytes_allocated -= allocation.size;
+        self.bytes_committed -= allocation.size;
+    }
+
+    pub(crate) fn get(&self, id: BufferID) -> &D::Buffer {
+        &self.buffers_in_use[&id].buffer
+    }
+
+    #[inline]
+    pub(crate) fn bytes_allocated(&self) -> u64 {
+        self.bytes_allocated
+    }
+}
+
+// Old allocator:
 
 const TEXTURE_CACHE_SIZE: usize = 8;
 
