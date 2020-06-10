@@ -38,10 +38,33 @@ pub(crate) struct GPUMemoryAllocator<D> where D: Device {
 struct BufferAllocation<D> where D: Device {
     buffer: D::Buffer,
     size: u64,
+    tag: BufferTag,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct BufferID(pub(crate) u32);
+
+// For debugging and profiling.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum BufferTag {
+    QuadVertexPositions,
+    QuadVertexIndices,
+    QuadsVertexIndices,
+    Fill,
+    TileD3D11,
+    TilePathInfoD3D11,
+    PropagateMetadataD3D11,
+    BackdropInfoD3D11,
+    MicrolineD3D11,
+    DiceMetadataD3D11,
+    DiceIndirectDrawParamsD3D11,
+    FillIndirectDrawParamsD3D11,
+    ZBufferD3D11,
+    FirstTileD3D11,
+    AlphaTileD3D11,
+    PointsD3D11,
+    PointIndicesD3D11,
+}
 
 impl<D> GPUMemoryAllocator<D> where D: Device {
     pub(crate) fn new() -> GPUMemoryAllocator<D> {
@@ -53,7 +76,7 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         }
     }
 
-    pub(crate) fn allocate<T>(&mut self, device: &D, size: u64) -> BufferID {
+    pub(crate) fn allocate<T>(&mut self, device: &D, size: u64, tag: BufferTag) -> BufferID {
         let buffer = device.create_buffer(BufferUploadMode::Dynamic);
         device.allocate_buffer::<T>(&buffer,
                                      BufferData::Uninitialized(size as usize),
@@ -62,7 +85,7 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         self.next_id.0 += 1;
 
         let byte_size = size * mem::size_of::<T>() as u64;
-        self.buffers_in_use.insert(id, BufferAllocation { buffer, size: byte_size });
+        self.buffers_in_use.insert(id, BufferAllocation { buffer, size: byte_size, tag });
         self.bytes_allocated += byte_size;
         self.bytes_committed += byte_size;
 
@@ -85,6 +108,16 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
     #[inline]
     pub(crate) fn bytes_allocated(&self) -> u64 {
         self.bytes_allocated
+    }
+
+    pub(crate) fn dump(&self) {
+        println!("GPU memory dump:");
+        let mut ids: Vec<BufferID> = self.buffers_in_use.keys().cloned().collect();
+        ids.sort();
+        for id in ids {
+            let allocation = &self.buffers_in_use[&id];
+            println!("id {:?}: {:?} ({:?} B)", id, allocation.tag, allocation.size);
+        }
     }
 }
 
