@@ -9,8 +9,8 @@
 // except according to those terms.
 
 use crate::gpu::debug::DebugUIPresenter;
-use crate::gpu::mem::{BufferID, BufferTag, ClipVertexStorage, DiceMetadataStorage, FillVertexStorage, FirstTile};
-use crate::gpu::mem::{GPUMemoryAllocator, StorageAllocators, StorageID, TextureCache, TexturePage, TileVertexStorage};
+use crate::gpu::mem::{BufferID, BufferTag, ClipVertexStorage, DiceMetadataStorage, FillVertexStorage, FirstTile, FramebufferID, FramebufferTag};
+use crate::gpu::mem::{GPUMemoryAllocator, PatternTexturePage, StorageAllocators, StorageID, TextureID, TextureTag, TileVertexStorage};
 use crate::gpu::options::{DestFramebuffer, RendererLevel, RendererOptions};
 use crate::gpu::perf::{PendingTimer, RenderStats, RenderTime, TimerFuture, TimerQueryCache};
 use crate::gpu::shaders::{BlitBufferVertexArray, BlitProgram, BlitVertexArray, ClearProgram};
@@ -129,11 +129,11 @@ pub struct Renderer<D> where D: Device {
     reprojection_program: ReprojectionProgram<D>,
     quad_vertex_positions_buffer_id: BufferID,
     quad_vertex_indices_buffer_id: BufferID,
-    texture_pages: Vec<Option<TexturePage<D>>>,
+    pattern_texture_pages: Vec<Option<PatternTexturePage>>,
     render_targets: Vec<RenderTargetInfo>,
     render_target_stack: Vec<RenderTargetId>,
-    area_lut_texture: D::Texture,
-    gamma_lut_texture: D::Texture,
+    area_lut_texture_id: TextureID,
+    gamma_lut_texture_id: TextureID,
     allocator: GPUMemoryAllocator<D>,
 
     // Scene
@@ -144,9 +144,6 @@ pub struct Renderer<D> where D: Device {
 
     // Frames
     frame: Frame<D>,
-
-    // Rendering state
-    texture_cache: TextureCache<D>,
 
     // Debug
     pub stats: RenderStats,
@@ -172,20 +169,20 @@ struct Frame<D> where D: Device {
     buffered_fills: Vec<Fill>,
     pending_fills: Vec<Fill>,
     alpha_tile_count: u32,
-    mask_storage: Option<MaskStorage<D>>,
+    mask_storage: Option<MaskStorage>,
     // Temporary place that we copy tiles to in order to perform clips, allocated lazily.
     //
     // TODO(pcwalton): This should be sparse, not dense.
-    mask_temp_framebuffer: Option<D::Framebuffer>,
+    mask_temp_framebuffer: Option<FramebufferID>,
     stencil_vertex_array: StencilVertexArray<D>,
     reprojection_vertex_array: ReprojectionVertexArray<D>,
-    dest_blend_framebuffer: D::Framebuffer,
-    intermediate_dest_framebuffer: D::Framebuffer,
-    texture_metadata_texture: D::Texture,
+    dest_blend_framebuffer_id: FramebufferID,
+    intermediate_dest_framebuffer_id: FramebufferID,
+    texture_metadata_texture_id: TextureID,
 }
 
-struct MaskStorage<D> where D: Device {
-    framebuffer: D::Framebuffer,
+struct MaskStorage {
+    framebuffer_id: FramebufferID,
     allocated_page_count: u32,
 }
 
@@ -210,12 +207,24 @@ impl<D> Renderer<D> where D: Device {
             RendererLevel::D3D9 => None,
         };
 
-        let area_lut_texture =
-            device.create_texture_from_png(resources, "area-lut", TextureFormat::RGBA8);
-        let gamma_lut_texture =
-            device.create_texture_from_png(resources, "gamma-lut", TextureFormat::R8);
-
         let mut allocator = GPUMemoryAllocator::new();
+
+        let area_lut_texture_id = allocator.allocate_texture(&device,
+                                                             Vector2I::splat(256),
+                                                             TextureFormat::RGBA8,
+                                                             TextureTag::AreaLUT);
+        let gamma_lut_texture_id = allocator.allocate_texture(&device,
+                                                              vec2i(256, 8),
+                                                              TextureFormat::R8,
+                                                              TextureTag::GammaLUT);
+        device.upload_png_to_texture(resources,
+                                     "area-lut",
+                                     allocator.get_texture(area_lut_texture_id),
+                                     TextureFormat::RGBA8);
+        device.upload_png_to_texture(resources,
+                                     "gamma-lut",
+                                     allocator.get_texture(gamma_lut_texture_id),
+                                     TextureFormat::R8);
 
         let quad_vertex_positions_buffer_id =
             allocator.allocate_buffer::<u16>(&device,
@@ -268,7 +277,7 @@ impl<D> Renderer<D> where D: Device {
             d3d11_programs,
             quad_vertex_positions_buffer_id,
             quad_vertex_indices_buffer_id,
-            texture_pages: vec![],
+            pattern_texture_pages: vec![],
             render_targets: vec![],
             render_target_stack: vec![],
 
@@ -281,8 +290,8 @@ impl<D> Renderer<D> where D: Device {
 
             allocator,
 
-            area_lut_texture,
-            gamma_lut_texture,
+            area_lut_texture_id,
+            gamma_lut_texture_id,
 
             stencil_program,
             reprojection_program,
@@ -293,8 +302,6 @@ impl<D> Renderer<D> where D: Device {
             pending_timers: VecDeque::new(),
             timer_query_cache,
             debug_ui_presenter,
-
-            texture_cache: TextureCache::new(),
 
             flags: RendererFlags::empty(),
         }
@@ -317,7 +324,7 @@ impl<D> Renderer<D> where D: Device {
                 self.start_rendering(bounding_quad, path_count, needs_readable_framebuffer);
             }
             RenderCommand::AllocateTexturePage { page_id, ref descriptor } => {
-                self.allocate_texture_page(page_id, descriptor)
+                self.allocate_pattern_texture_page(page_id, descriptor)
             }
             RenderCommand::UploadTexelData { ref texels, location } => {
                 self.upload_texel_data(texels, location)
@@ -498,30 +505,33 @@ impl<D> Renderer<D> where D: Device {
         let new_size = vec2i(MASK_FRAMEBUFFER_WIDTH,
                              MASK_FRAMEBUFFER_HEIGHT * alpha_tile_pages_needed as i32);
         let format = self.mask_texture_format();
-        let mask_texture = self.device.create_texture(format, new_size);
+        let mask_framebuffer_id =
+            self.allocator.allocate_framebuffer(&self.device,
+                                                new_size,
+                                                format,
+                                                FramebufferTag::TileAlphaMask);
+        let mask_framebuffer = self.allocator.get_framebuffer(mask_framebuffer_id);
+        let mask_texture = self.device.framebuffer_texture(&mask_framebuffer);
         let old_mask_storage = self.frame.mask_storage.take();
         self.frame.mask_storage = Some(MaskStorage {
-            framebuffer: self.device.create_framebuffer(mask_texture),
+            framebuffer_id: mask_framebuffer_id,
             allocated_page_count: alpha_tile_pages_needed,
         });
 
         // Copy over existing content if needed.
-        let old_mask_framebuffer = match old_mask_storage {
-            Some(old_storage) if copy_existing => old_storage.framebuffer,
+        let old_mask_framebuffer_id = match old_mask_storage {
+            Some(old_storage) if copy_existing => old_storage.framebuffer_id,
             Some(_) | None => return,
         };
-        let old_mask_texture = self.device.framebuffer_texture(&old_mask_framebuffer);
+        let old_mask_framebuffer = self.allocator.get_framebuffer(old_mask_framebuffer_id);
+        let old_mask_texture = self.device.framebuffer_texture(old_mask_framebuffer);
         let old_size = self.device.texture_size(old_mask_texture);
 
         let timer_query = self.timer_query_cache.alloc(&self.device);
         self.device.begin_timer_query(&timer_query);
 
         self.device.draw_elements(6, &RenderState {
-            target: &RenderTarget::Framebuffer(&self.frame
-                                                    .mask_storage
-                                                    .as_ref()
-                                                    .unwrap()
-                                                    .framebuffer),
+            target: &RenderTarget::Framebuffer(mask_framebuffer),
             program: &self.blit_program.program,
             vertex_array: &self.frame.blit_vertex_array.vertex_array,
             primitive: Primitive::Triangles,
@@ -549,38 +559,39 @@ impl<D> Renderer<D> where D: Device {
         self.stats.drawcall_count += 1;
     }
 
-    fn allocate_texture_page(&mut self,
-                             page_id: TexturePageId,
-                             descriptor: &TexturePageDescriptor) {
+    fn allocate_pattern_texture_page(&mut self,
+                                     page_id: TexturePageId,
+                                     descriptor: &TexturePageDescriptor) {
         // Fill in IDs up to the requested page ID.
         let page_index = page_id.0 as usize;
-        while self.texture_pages.len() < page_index + 1 {
-            self.texture_pages.push(None);
+        while self.pattern_texture_pages.len() < page_index + 1 {
+            self.pattern_texture_pages.push(None);
         }
 
         // Clear out any existing texture.
-        if let Some(old_texture_page) = self.texture_pages[page_index].take() {
-            let old_texture = self.device.destroy_framebuffer(old_texture_page.framebuffer);
-            self.texture_cache.release_texture(old_texture);
+        if let Some(old_texture_page) = self.pattern_texture_pages[page_index].take() {
+            self.allocator.free_framebuffer(old_texture_page.framebuffer_id);
         }
 
         // Allocate texture.
         let texture_size = descriptor.size;
-        let texture = self.texture_cache.create_texture(&mut self.device,
-                                                        TextureFormat::RGBA8,
-                                                        texture_size);
-        let framebuffer = self.device.create_framebuffer(texture);
-        self.texture_pages[page_index] = Some(TexturePage {
-            framebuffer,
+        let framebuffer_id = self.allocator.allocate_framebuffer(&self.device,
+                                                                 texture_size,
+                                                                 TextureFormat::RGBA8,
+                                                                 FramebufferTag::PatternPage);
+        self.pattern_texture_pages[page_index] = Some(PatternTexturePage {
+            framebuffer_id,
             must_preserve_contents: false,
         });
     }
 
     fn upload_texel_data(&mut self, texels: &[ColorU], location: TextureLocation) {
-        let texture_page = self.texture_pages[location.page.0 as usize]
+        let texture_page = self.pattern_texture_pages[location.page.0 as usize]
                                .as_mut()
                                .expect("Texture page not allocated yet!");
-        let texture = self.device.framebuffer_texture(&texture_page.framebuffer);
+        let framebuffer_id = texture_page.framebuffer_id;
+        let framebuffer = self.allocator.get_framebuffer(framebuffer_id);
+        let texture = self.device.framebuffer_texture(framebuffer);
         let texels = color::color_slice_to_u8_slice(texels);
         self.device.upload_to_texture(texture, location.rect, TextureDataRef::U8(texels));
         texture_page.must_preserve_contents = true;
@@ -629,7 +640,8 @@ impl<D> Renderer<D> where D: Device {
             texels.push(f16::default())
         }
 
-        let texture = &mut self.frame.texture_metadata_texture;
+        let texture_id = self.frame.texture_metadata_texture_id;
+        let texture = self.allocator.get_texture(texture_id);
         let width = TEXTURE_METADATA_TEXTURE_WIDTH;
         let height = texels.len() as i32 / (4 * TEXTURE_METADATA_TEXTURE_WIDTH);
         let rect = RectI::new(Vector2I::zero(), Vector2I::new(width, height));
@@ -1188,10 +1200,14 @@ impl<D> Renderer<D> where D: Device {
         let fill_vertex_buffer = self.allocator.get_buffer(fill_vertex_buffer_id);
 
         let mask_storage = self.frame.mask_storage.as_ref().expect("Where's the mask storage?");
-        let image_texture = self.device.framebuffer_texture(&mask_storage.framebuffer);
+        let mask_framebuffer_id = mask_storage.framebuffer_id;
+        let mask_framebuffer = self.allocator.get_framebuffer(mask_framebuffer_id);
+        let image_texture = self.device.framebuffer_texture(mask_framebuffer);
 
         let tiles_d3d11_buffer = self.allocator.get_buffer(tiles_d3d11_buffer_id);
         let alpha_tiles_buffer = self.allocator.get_buffer(alpha_tiles_buffer_id);
+
+        let area_lut_texture = self.allocator.get_texture(self.area_lut_texture_id);
 
         let timer_query = self.timer_query_cache.alloc(&self.device);
         self.device.begin_timer_query(&timer_query);
@@ -1206,7 +1222,7 @@ impl<D> Renderer<D> where D: Device {
 
         self.device.dispatch_compute(dimensions, &ComputeState {
             program: &fill_compute_program.program,
-            textures: &[(&fill_compute_program.area_lut_texture, &self.area_lut_texture)],
+            textures: &[(&fill_compute_program.area_lut_texture, area_lut_texture)],
             images: &[(&fill_compute_program.dest_image, image_texture, ImageAccess::ReadWrite)],
             uniforms: &[
                 (&fill_compute_program.alpha_tile_range_uniform,
@@ -1881,8 +1897,10 @@ impl<D> Renderer<D> where D: Device {
         // FIXME(pcwalton)
         //let z_buffer_texture = self.device.framebuffer_texture(&z_buffer.framebuffer);
 
-        textures.push((&tile_program.texture_metadata_texture,
-                       &self.frame.texture_metadata_texture));
+        let texture_metadata_texture =
+            self.allocator.get_texture(self.frame.texture_metadata_texture_id);
+        textures.push((&tile_program.texture_metadata_texture, texture_metadata_texture));
+
         //textures.push((&tile_program.z_buffer_texture, z_buffer_texture));
 
         /*
@@ -1898,7 +1916,9 @@ impl<D> Renderer<D> where D: Device {
                                                      TEXTURE_METADATA_TEXTURE_HEIGHT))));
 
         if let Some(ref mask_storage) = self.frame.mask_storage {
-            let mask_texture = self.device.framebuffer_texture(&mask_storage.framebuffer);
+            let mask_framebuffer_id = mask_storage.framebuffer_id;
+            let mask_framebuffer = self.allocator.get_framebuffer(mask_framebuffer_id);
+            let mask_texture = self.device.framebuffer_texture(mask_framebuffer);
             uniforms.push((&tile_program.mask_texture_size_0_uniform,
                            UniformData::Vec2(self.device.texture_size(mask_texture).to_f32().0)));
             textures.push((&tile_program.mask_texture_0, mask_texture));
@@ -2100,7 +2120,10 @@ impl<D> Renderer<D> where D: Device {
             }
             None => {
                 if self.flags.contains(RendererFlags::INTERMEDIATE_DEST_FRAMEBUFFER_NEEDED) {
-                    RenderTarget::Framebuffer(&self.frame.intermediate_dest_framebuffer)
+                    let intermediate_dest_framebuffer =
+                        self.allocator.get_framebuffer(self.frame
+                                                           .intermediate_dest_framebuffer_id);
+                    RenderTarget::Framebuffer(intermediate_dest_framebuffer)
                 } else {
                     match self.dest_framebuffer {
                         DestFramebuffer::Default { .. } => RenderTarget::Default,
@@ -2156,7 +2179,8 @@ impl<D> Renderer<D> where D: Device {
             bg_color: ColorF,
             defringing_kernel: Option<DefringingKernel>,
             gamma_correction: bool) {
-        textures.push((&tile_program.gamma_lut_texture, &self.gamma_lut_texture));
+        let gamma_lut_texture = self.allocator.get_texture(self.gamma_lut_texture_id);
+        textures.push((&tile_program.gamma_lut_texture, gamma_lut_texture));
 
         match defringing_kernel {
             Some(ref kernel) => {
@@ -2245,9 +2269,12 @@ impl<D> Renderer<D> where D: Device {
 
         let main_viewport = self.main_viewport();
 
+        let intermediate_dest_framebuffer =
+            self.allocator.get_framebuffer(self.frame.intermediate_dest_framebuffer_id);
+
         let textures = [
             (&self.blit_program.src_texture,
-             self.device.framebuffer_texture(&self.frame.intermediate_dest_framebuffer))
+             self.device.framebuffer_texture(intermediate_dest_framebuffer))
         ];
 
         self.device.draw_elements(6, &RenderState {
@@ -2294,7 +2321,7 @@ impl<D> Renderer<D> where D: Device {
         let must_preserve_contents = match self.render_target_stack.last() {
             Some(&render_target_id) => {
                 let texture_page = self.render_target_location(render_target_id).page;
-                self.texture_pages[texture_page.0 as usize]
+                self.pattern_texture_pages[texture_page.0 as usize]
                     .as_ref()
                     .expect("Draw target texture page not allocated!")
                     .must_preserve_contents
@@ -2317,7 +2344,7 @@ impl<D> Renderer<D> where D: Device {
         match self.render_target_stack.last() {
             Some(&render_target_id) => {
                 let texture_page = self.render_target_location(render_target_id).page;
-                self.texture_pages[texture_page.0 as usize]
+                self.pattern_texture_pages[texture_page.0 as usize]
                     .as_mut()
                     .expect("Draw target texture page not allocated!")
                     .must_preserve_contents = true;
@@ -2361,10 +2388,11 @@ impl<D> Renderer<D> where D: Device {
     }
 
     fn texture_page_framebuffer(&self, id: TexturePageId) -> &D::Framebuffer {
-        &self.texture_pages[id.0 as usize]
-             .as_ref()
-             .expect("Texture page not allocated!")
-             .framebuffer
+        let framebuffer_id = self.pattern_texture_pages[id.0 as usize]
+                                 .as_ref()
+                                 .expect("Texture page not allocated!")
+                                 .framebuffer_id;
+        self.allocator.get_framebuffer(framebuffer_id)
     }
 
     fn texture_page(&self, id: TexturePageId) -> &D::Texture {
@@ -2414,14 +2442,21 @@ impl<D> Frame<D> where D: Device {
 
         let texture_metadata_texture_size = vec2i(TEXTURE_METADATA_TEXTURE_WIDTH,
                                                   TEXTURE_METADATA_TEXTURE_HEIGHT);
-        let texture_metadata_texture = device.create_texture(TextureFormat::RGBA16F,
-                                                             texture_metadata_texture_size);
+        let texture_metadata_texture_id = allocator.allocate_texture(device,
+                                                                     texture_metadata_texture_size,
+                                                                     TextureFormat::RGBA16F,
+                                                                     TextureTag::TextureMetadata);
 
-        let intermediate_dest_texture = device.create_texture(TextureFormat::RGBA8, window_size);
-        let intermediate_dest_framebuffer = device.create_framebuffer(intermediate_dest_texture);
+        let intermediate_dest_framebuffer_id =
+            allocator.allocate_framebuffer(device,
+                                           window_size,
+                                           TextureFormat::RGBA8,
+                                           FramebufferTag::IntermediateDest);
 
-        let dest_blend_texture = device.create_texture(TextureFormat::RGBA8, window_size);
-        let dest_blend_framebuffer = device.create_framebuffer(dest_blend_texture);
+        let dest_blend_framebuffer_id = allocator.allocate_framebuffer(device,
+                                                                       window_size,
+                                                                       TextureFormat::RGBA8,
+                                                                       FramebufferTag::DestBlend);
 
         Frame {
             blit_vertex_array,
@@ -2431,15 +2466,15 @@ impl<D> Frame<D> where D: Device {
             stencil_vertex_array,
             quads_vertex_indices_buffer_id: None,
             quads_vertex_indices_length: 0,
-            texture_metadata_texture,
+            texture_metadata_texture_id,
             buffered_fills: vec![],
             pending_fills: vec![],
             alpha_tile_count: 0,
             tile_batch_info: VecMap::new(),
             mask_storage: None,
             mask_temp_framebuffer: None,
-            intermediate_dest_framebuffer,
-            dest_blend_framebuffer,
+            intermediate_dest_framebuffer_id,
+            dest_blend_framebuffer_id,
             framebuffer_flags: FramebufferFlags::empty(),
         }
     }

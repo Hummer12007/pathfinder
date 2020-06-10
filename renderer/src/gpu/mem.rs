@@ -31,9 +31,12 @@ const MAX_FREE_SIZE: u64 = 32 * 1024 * 1024;    // 32 MB
 pub(crate) struct GPUMemoryAllocator<D> where D: Device {
     buffers_in_use: FxHashMap<BufferID, BufferAllocation<D>>,
     textures_in_use: FxHashMap<TextureID, TextureAllocation<D>>,
+    framebuffers_in_use: FxHashMap<FramebufferID, FramebufferAllocation<D>>,
+    next_buffer_id: BufferID,
+    next_texture_id: TextureID,
+    next_framebuffer_id: FramebufferID,
     bytes_committed: u64,
     bytes_allocated: u64,
-    next_id: ResourceID,
 }
 
 struct BufferAllocation<D> where D: Device {
@@ -48,6 +51,12 @@ struct TextureAllocation<D> where D: Device {
     tag: TextureTag,
 }
 
+struct FramebufferAllocation<D> where D: Device {
+    framebuffer: D::Framebuffer,
+    descriptor: TextureDescriptor,
+    tag: FramebufferTag,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct TextureDescriptor {
     width: u32,
@@ -55,15 +64,22 @@ pub(crate) struct TextureDescriptor {
     format: TextureFormat,
 }
 
-// Either a buffer ID or a texture ID.
+// ID of any resource.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct ResourceID(pub(crate) u64);
+enum ResourceID {
+    Buffer(BufferID),
+    Texture(TextureID),
+    Framebuffer(FramebufferID),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct BufferID(pub(crate) u64);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct TextureID(pub(crate) u64);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct FramebufferID(pub(crate) u64);
 
 // For debugging and profiling.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -90,6 +106,18 @@ pub(crate) enum BufferTag {
 // For debugging and profiling.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum TextureTag {
+    AreaLUT,
+    GammaLUT,
+    TextureMetadata,
+}
+
+// For debugging and profiling.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum FramebufferTag {
+    TileAlphaMask,
+    PatternPage,
+    IntermediateDest,
+    DestBlend,
 }
 
 impl<D> GPUMemoryAllocator<D> where D: Device {
@@ -97,9 +125,12 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         GPUMemoryAllocator {
             buffers_in_use: FxHashMap::default(),
             textures_in_use: FxHashMap::default(),
+            framebuffers_in_use: FxHashMap::default(),
+            next_buffer_id: BufferID(0),
+            next_texture_id: TextureID(0),
+            next_framebuffer_id: FramebufferID(0),
             bytes_committed: 0,
             bytes_allocated: 0,
-            next_id: ResourceID(0),
         }
     }
 
@@ -109,8 +140,8 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         device.allocate_buffer::<T>(&buffer,
                                      BufferData::Uninitialized(size as usize),
                                      BufferTarget::Storage);
-        let id = BufferID(self.next_id.0);
-        self.next_id.0 += 1;
+        let id = self.next_buffer_id;
+        self.next_buffer_id.0 += 1;
 
         let byte_size = size * mem::size_of::<T>() as u64;
         self.buffers_in_use.insert(id, BufferAllocation { buffer, size: byte_size, tag });
@@ -120,17 +151,95 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         id
     }
 
-    pub(crate) fn free_buffer(&mut self, mut id: BufferID) {
+    pub(crate) fn allocate_texture(&mut self,
+                                   device: &D,
+                                   size: Vector2I,
+                                   format: TextureFormat,
+                                   tag: TextureTag)
+                                   -> TextureID {
+        let texture = device.create_texture(format, size);
+        let id = self.next_texture_id;
+        self.next_texture_id.0 += 1;
+
+        let descriptor = TextureDescriptor {
+            width: size.x() as u32,
+            height: size.y() as u32,
+            format,
+        };
+        self.textures_in_use.insert(id, TextureAllocation { texture, descriptor, tag });
+
+        let byte_size = descriptor.byte_size();
+        self.bytes_allocated += byte_size;
+        self.bytes_committed += byte_size;
+
+        id
+    }
+
+    pub(crate) fn allocate_framebuffer(&mut self,
+                                       device: &D,
+                                       size: Vector2I,
+                                       format: TextureFormat,
+                                       tag: FramebufferTag)
+                                       -> FramebufferID {
+        let texture = device.create_texture(format, size);
+        let framebuffer = device.create_framebuffer(texture);
+        let id = self.next_framebuffer_id;
+        self.next_framebuffer_id.0 += 1;
+
+        let descriptor = TextureDescriptor {
+            width: size.x() as u32,
+            height: size.y() as u32,
+            format,
+        };
+        self.framebuffers_in_use.insert(id, FramebufferAllocation {
+            framebuffer,
+            descriptor,
+            tag,
+        });
+
+        let byte_size = descriptor.byte_size();
+        self.bytes_allocated += byte_size;
+        self.bytes_committed += byte_size;
+
+        id
+    }
+
+    pub(crate) fn free_buffer(&mut self, id: BufferID) {
         let allocation = self.buffers_in_use
                              .remove(&id)
                              .expect("Attempted to free unallocated buffer!");
         self.bytes_allocated -= allocation.size;
         self.bytes_committed -= allocation.size;
-        id.0 = !0;
+    }
+
+    pub(crate) fn free_texture(&mut self, id: TextureID) {
+        let allocation = self.textures_in_use
+                             .remove(&id)
+                             .expect("Attempted to free unallocated texture!");
+        let byte_size = allocation.descriptor.byte_size();
+        self.bytes_allocated -= byte_size;
+        self.bytes_committed -= byte_size;
+    }
+
+    pub(crate) fn free_framebuffer(&mut self, id: FramebufferID) {
+        let allocation = self.framebuffers_in_use
+                             .remove(&id)
+                             .expect("Attempted to free unallocated framebuffer!");
+        let byte_size = allocation.descriptor.byte_size();
+        self.bytes_allocated -= byte_size;
+        self.bytes_committed -= byte_size;
     }
 
     pub(crate) fn get_buffer(&self, id: BufferID) -> &D::Buffer {
         &self.buffers_in_use[&id].buffer
+    }
+
+    pub(crate) fn get_texture(&self, id: TextureID) -> &D::Texture {
+        &self.textures_in_use[&id].texture
+    }
+
+    pub(crate) fn get_framebuffer(&self, id: FramebufferID) -> &D::Framebuffer {
+        &self.framebuffers_in_use[&id].framebuffer
     }
 
     #[inline]
@@ -139,13 +248,48 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
     }
 
     pub(crate) fn dump(&self) {
-        println!("GPU memory dump:");
+        println!("GPU memory dump");
+        println!("---------------");
+
+        println!("Buffers:");
         let mut ids: Vec<BufferID> = self.buffers_in_use.keys().cloned().collect();
         ids.sort();
         for id in ids {
             let allocation = &self.buffers_in_use[&id];
             println!("id {:?}: {:?} ({:?} B)", id, allocation.tag, allocation.size);
         }
+
+        println!("Textures:");
+        let mut ids: Vec<TextureID> = self.textures_in_use.keys().cloned().collect();
+        ids.sort();
+        for id in ids {
+            let allocation = &self.textures_in_use[&id];
+            println!("id {:?}: {:?}x{:?} {:?} ({:?} B)",
+                     id,
+                     allocation.descriptor.width,
+                     allocation.descriptor.height,
+                     allocation.descriptor.format,
+                     allocation.descriptor.byte_size());
+        }
+
+        println!("Framebuffers:");
+        let mut ids: Vec<FramebufferID> = self.framebuffers_in_use.keys().cloned().collect();
+        ids.sort();
+        for id in ids {
+            let allocation = &self.framebuffers_in_use[&id];
+            println!("id {:?}: {:?}x{:?} {:?} ({:?} B)",
+                     id,
+                     allocation.descriptor.width,
+                     allocation.descriptor.height,
+                     allocation.descriptor.format,
+                     allocation.descriptor.byte_size());
+        }
+    }
+}
+
+impl TextureDescriptor {
+    fn byte_size(&self) -> u64 {
+        self.width as u64 * self.height as u64 * self.format.bytes_per_pixel() as u64
     }
 }
 
@@ -589,6 +733,7 @@ impl<D> Storage for ClipVertexStorage<D> where D: Device {
 
 // Texture cache
 
+/*
 pub(crate) struct TextureCache<D> where D: Device {
     textures: Vec<D::Texture>,
 }
@@ -617,9 +762,10 @@ impl<D> TextureCache<D> where D: Device {
         self.textures.insert(0, texture);
     }
 }
+*/
 
-pub(crate) struct TexturePage<D> where D: Device {
-    pub(crate) framebuffer: D::Framebuffer,
+pub(crate) struct PatternTexturePage {
+    pub(crate) framebuffer_id: FramebufferID,
     pub(crate) must_preserve_contents: bool,
 }
 

@@ -139,6 +139,30 @@ pub trait Device: Sized {
         }
     }
 
+    fn upload_png_to_texture(&self,
+                             resources: &dyn ResourceLoader,
+                             name: &str,
+                             texture: &Self::Texture,
+                             format: TextureFormat) {
+        let data = resources.slurp(&format!("textures/{}.png", name)).unwrap();
+        let image = image::load_from_memory_with_format(&data, ImageFormat::Png).unwrap();
+        match format {
+            TextureFormat::R8 => {
+                let image = image.to_luma();
+                let size = vec2i(image.width() as i32, image.height() as i32);
+                let rect = RectI::new(Vector2I::default(), size);
+                self.upload_to_texture(&texture, rect, TextureDataRef::U8(&image))
+            }
+            TextureFormat::RGBA8 => {
+                let image = image.to_rgba();
+                let size = vec2i(image.width() as i32, image.height() as i32);
+                let rect = RectI::new(Vector2I::default(), size);
+                self.upload_to_texture(&texture, rect, TextureDataRef::U8(&image))
+            }
+            _ => unimplemented!(),
+        }
+    }
+
     fn create_program_from_shader_names(
         &self,
         resources: &dyn ResourceLoader,
