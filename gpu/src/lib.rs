@@ -178,7 +178,7 @@ pub enum FeatureLevel {
     D3D11,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TextureFormat {
     R8,
     R16F,

@@ -30,9 +30,10 @@ const MAX_FREE_SIZE: u64 = 32 * 1024 * 1024;    // 32 MB
 
 pub(crate) struct GPUMemoryAllocator<D> where D: Device {
     buffers_in_use: FxHashMap<BufferID, BufferAllocation<D>>,
+    textures_in_use: FxHashMap<TextureID, TextureAllocation<D>>,
     bytes_committed: u64,
     bytes_allocated: u64,
-    next_id: BufferID,
+    next_id: ResourceID,
 }
 
 struct BufferAllocation<D> where D: Device {
@@ -41,8 +42,28 @@ struct BufferAllocation<D> where D: Device {
     tag: BufferTag,
 }
 
+struct TextureAllocation<D> where D: Device {
+    texture: D::Texture,
+    descriptor: TextureDescriptor,
+    tag: TextureTag,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct BufferID(pub(crate) u32);
+pub(crate) struct TextureDescriptor {
+    width: u32,
+    height: u32,
+    format: TextureFormat,
+}
+
+// Either a buffer ID or a texture ID.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct ResourceID(pub(crate) u64);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct BufferID(pub(crate) u64);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct TextureID(pub(crate) u64);
 
 // For debugging and profiling.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -66,22 +87,29 @@ pub(crate) enum BufferTag {
     PointIndicesD3D11,
 }
 
+// For debugging and profiling.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum TextureTag {
+}
+
 impl<D> GPUMemoryAllocator<D> where D: Device {
     pub(crate) fn new() -> GPUMemoryAllocator<D> {
         GPUMemoryAllocator {
             buffers_in_use: FxHashMap::default(),
+            textures_in_use: FxHashMap::default(),
             bytes_committed: 0,
             bytes_allocated: 0,
-            next_id: BufferID(0),
+            next_id: ResourceID(0),
         }
     }
 
-    pub(crate) fn allocate<T>(&mut self, device: &D, size: u64, tag: BufferTag) -> BufferID {
+    pub(crate) fn allocate_buffer<T>(&mut self, device: &D, size: u64, tag: BufferTag)
+                                     -> BufferID {
         let buffer = device.create_buffer(BufferUploadMode::Dynamic);
         device.allocate_buffer::<T>(&buffer,
                                      BufferData::Uninitialized(size as usize),
                                      BufferTarget::Storage);
-        let id = self.next_id;
+        let id = BufferID(self.next_id.0);
         self.next_id.0 += 1;
 
         let byte_size = size * mem::size_of::<T>() as u64;
@@ -92,7 +120,7 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         id
     }
 
-    pub(crate) fn free(&mut self, mut id: BufferID) {
+    pub(crate) fn free_buffer(&mut self, mut id: BufferID) {
         let allocation = self.buffers_in_use
                              .remove(&id)
                              .expect("Attempted to free unallocated buffer!");
@@ -101,7 +129,7 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         id.0 = !0;
     }
 
-    pub(crate) fn get(&self, id: BufferID) -> &D::Buffer {
+    pub(crate) fn get_buffer(&self, id: BufferID) -> &D::Buffer {
         &self.buffers_in_use[&id].buffer
     }
 

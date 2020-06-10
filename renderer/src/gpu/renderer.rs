@@ -218,18 +218,18 @@ impl<D> Renderer<D> where D: Device {
         let mut allocator = GPUMemoryAllocator::new();
 
         let quad_vertex_positions_buffer_id =
-            allocator.allocate::<u16>(&device,
-                                      QUAD_VERTEX_POSITIONS.len() as u64,
-                                      BufferTag::QuadVertexPositions);
-        device.upload_to_buffer(allocator.get(quad_vertex_positions_buffer_id),
+            allocator.allocate_buffer::<u16>(&device,
+                                             QUAD_VERTEX_POSITIONS.len() as u64,
+                                             BufferTag::QuadVertexPositions);
+        device.upload_to_buffer(allocator.get_buffer(quad_vertex_positions_buffer_id),
                                 0,
                                 &QUAD_VERTEX_POSITIONS,
                                 BufferTarget::Vertex);
         let quad_vertex_indices_buffer_id =
-            allocator.allocate::<u32>(&device,
-                                      QUAD_VERTEX_INDICES.len() as u64,
-                                      BufferTag::QuadVertexIndices);
-        device.upload_to_buffer(allocator.get(quad_vertex_indices_buffer_id),
+            allocator.allocate_buffer::<u32>(&device,
+                                             QUAD_VERTEX_INDICES.len() as u64,
+                                             BufferTag::QuadVertexIndices);
+        device.upload_to_buffer(allocator.get_buffer(quad_vertex_indices_buffer_id),
                                 0,
                                 &QUAD_VERTEX_INDICES,
                                 BufferTarget::Index);
@@ -379,7 +379,7 @@ impl<D> Renderer<D> where D: Device {
 
     fn free_tile_batch_buffers(&mut self) {
         for (_, tile_batch_info) in self.frame.tile_batch_info.drain() {
-            self.allocator.free(tile_batch_info.z_buffer_id);
+            self.allocator.free_buffer(tile_batch_info.z_buffer_id);
             match tile_batch_info.level_info {
                 TileBatchLevelInfo::D3D9 { .. } => unimplemented!(),
                 TileBatchLevelInfo::D3D11(TileBatchInfoD3D11 {
@@ -387,9 +387,9 @@ impl<D> Renderer<D> where D: Device {
                     propagate_metadata_buffer_id,
                     first_tile_map_buffer_id,
                 }) => {
-                    self.allocator.free(tiles_d3d11_buffer_id);
-                    self.allocator.free(propagate_metadata_buffer_id);
-                    self.allocator.free(first_tile_map_buffer_id);
+                    self.allocator.free_buffer(tiles_d3d11_buffer_id);
+                    self.allocator.free_buffer(propagate_metadata_buffer_id);
+                    self.allocator.free_buffer(first_tile_map_buffer_id);
                 }
             }
         }
@@ -477,12 +477,12 @@ impl<D> Renderer<D> where D: Device {
 
     #[inline]
     pub fn quad_vertex_positions_buffer(&self) -> &D::Buffer {
-        self.allocator.get(self.quad_vertex_positions_buffer_id)
+        self.allocator.get_buffer(self.quad_vertex_positions_buffer_id)
     }
 
     #[inline]
     pub fn quad_vertex_indices_buffer(&self) -> &D::Buffer {
-        self.allocator.get(self.quad_vertex_indices_buffer_id)
+        self.allocator.get_buffer(self.quad_vertex_indices_buffer_id)
     }
 
     fn reallocate_alpha_tile_pages_if_necessary(&mut self, copy_existing: bool) {
@@ -674,7 +674,9 @@ impl<D> Renderer<D> where D: Device {
     }
 
     fn allocate_tiles_d3d11(&mut self, tile_count: u32) -> BufferID {
-        self.allocator.allocate::<TileD3D11>(&self.device, tile_count as u64, BufferTag::TileD3D11)
+        self.allocator.allocate_buffer::<TileD3D11>(&self.device,
+                                                    tile_count as u64,
+                                                    BufferTag::TileD3D11)
     }
 
     fn upload_tiles(&mut self, storage_id: StorageID, tiles: &[TileObjectPrimitive]) {
@@ -701,16 +703,16 @@ impl<D> Renderer<D> where D: Device {
                                 .init_program;
 
         let path_info_buffer_id =
-            self.allocator.allocate::<TilePathInfo>(&self.device,
-                                                    tile_path_info.len() as u64,
-                                                    BufferTag::TilePathInfoD3D11);
-        let tile_path_info_buffer = self.allocator.get(path_info_buffer_id);
+            self.allocator.allocate_buffer::<TilePathInfo>(&self.device,
+                                                           tile_path_info.len() as u64,
+                                                           BufferTag::TilePathInfoD3D11);
+        let tile_path_info_buffer = self.allocator.get_buffer(path_info_buffer_id);
         self.device.upload_to_buffer(tile_path_info_buffer,
                                      0,
                                      tile_path_info,
                                      BufferTarget::Storage);
 
-        let tiles_buffer = self.allocator.get(tiles_d3d11_buffer_id);
+        let tiles_buffer = self.allocator.get_buffer(tiles_d3d11_buffer_id);
 
         let timer_query = self.timer_query_cache.alloc(&self.device);
         self.device.begin_timer_query(&timer_query);
@@ -734,7 +736,7 @@ impl<D> Renderer<D> where D: Device {
         self.current_timer.as_mut().unwrap().other_times.push(TimerFuture::new(timer_query));
         self.stats.drawcall_count += 1;
 
-        self.allocator.free(path_info_buffer_id);
+        self.allocator.free_buffer(path_info_buffer_id);
     }
 
     fn upload_propagate_metadata(&mut self,
@@ -742,19 +744,19 @@ impl<D> Renderer<D> where D: Device {
                                  backdrops: &[BackdropInfo])
                                  -> PropagateMetadataBufferIDs {
         let propagate_metadata_storage_id =
-            self.allocator.allocate::<PropagateMetadata>(&self.device,
-                                                         propagate_metadata.len() as u64,
-                                                         BufferTag::PropagateMetadataD3D11);
-        let propagate_metadata_buffer = self.allocator.get(propagate_metadata_storage_id);
+            self.allocator.allocate_buffer::<PropagateMetadata>(&self.device,
+                                                                propagate_metadata.len() as u64,
+                                                                BufferTag::PropagateMetadataD3D11);
+        let propagate_metadata_buffer = self.allocator.get_buffer(propagate_metadata_storage_id);
         self.device.upload_to_buffer(propagate_metadata_buffer,
                                      0,
                                      propagate_metadata,
                                      BufferTarget::Storage);
 
         let backdrops_storage_id =
-            self.allocator.allocate::<BackdropInfo>(&self.device,
-                                                    backdrops.len() as u64,
-                                                    BufferTag::BackdropInfoD3D11);
+            self.allocator.allocate_buffer::<BackdropInfo>(&self.device,
+                                                           backdrops.len() as u64,
+                                                           BufferTag::BackdropInfoD3D11);
 
         PropagateMetadataBufferIDs {
              propagate_metadata: propagate_metadata_storage_id,
@@ -763,7 +765,7 @@ impl<D> Renderer<D> where D: Device {
     }
 
     fn upload_initial_backdrops(&self, backdrops_buffer_id: BufferID, backdrops: &[BackdropInfo]) {
-        let backdrops_buffer = self.allocator.get(backdrops_buffer_id);
+        let backdrops_buffer = self.allocator.get_buffer(backdrops_buffer_id);
         self.device.upload_to_buffer(backdrops_buffer, 0, backdrops, BufferTarget::Storage);
     }
 
@@ -785,13 +787,13 @@ impl<D> Renderer<D> where D: Device {
         if let Some(quads_vertex_indices_buffer_id) = self.frame
                                                           .quads_vertex_indices_buffer_id
                                                           .take() {
-            self.allocator.free(quads_vertex_indices_buffer_id);
+            self.allocator.free_buffer(quads_vertex_indices_buffer_id);
         }
         let quads_vertex_indices_buffer_id =
-            self.allocator.allocate::<u32>(&self.device,
-                                           indices.len() as u64,
-                                           BufferTag::QuadsVertexIndices);
-        self.device.upload_to_buffer(self.allocator.get(quads_vertex_indices_buffer_id),
+            self.allocator.allocate_buffer::<u32>(&self.device,
+                                                  indices.len() as u64,
+                                                  BufferTag::QuadsVertexIndices);
+        self.device.upload_to_buffer(self.allocator.get_buffer(quads_vertex_indices_buffer_id),
                                      0,
                                      &indices,
                                      BufferTarget::Index);
@@ -812,22 +814,22 @@ impl<D> Renderer<D> where D: Device {
                                         .dice_compute_program;
 
         let microlines_buffer_id =
-            self.allocator.allocate::<Microline>(&self.device,
-                                                 self.allocated_microline_count as u64,
-                                                 BufferTag::MicrolineD3D11);
+            self.allocator.allocate_buffer::<Microline>(&self.device,
+                                                        self.allocated_microline_count as u64,
+                                                        BufferTag::MicrolineD3D11);
         let dice_metadata_buffer_id =
-            self.allocator.allocate::<DiceMetadata>(&self.device,
-                                                    dice_metadata.len() as u64,
-                                                    BufferTag::DiceMetadataD3D11);
+            self.allocator.allocate_buffer::<DiceMetadata>(&self.device,
+                                                           dice_metadata.len() as u64,
+                                                           BufferTag::DiceMetadataD3D11);
         let dice_indirect_draw_params_buffer_id =
-            self.allocator.allocate::<u32>(&self.device,
-                                           8,
-                                           BufferTag::DiceIndirectDrawParamsD3D11);
+            self.allocator.allocate_buffer::<u32>(&self.device,
+                                                  8,
+                                                  BufferTag::DiceIndirectDrawParamsD3D11);
 
-        let microlines_buffer = self.allocator.get(microlines_buffer_id);
-        let dice_metadata_storage_buffer = self.allocator.get(dice_metadata_buffer_id);
-        let dice_indirect_draw_params_buffer = self.allocator
-                                                   .get(dice_indirect_draw_params_buffer_id);
+        let microlines_buffer = self.allocator.get_buffer(microlines_buffer_id);
+        let dice_metadata_storage_buffer = self.allocator.get_buffer(dice_metadata_buffer_id);
+        let dice_indirect_draw_params_buffer =
+            self.allocator.get_buffer(dice_indirect_draw_params_buffer_id);
 
         let back_scene_buffers = self.back_scene_buffers
                                      .as_ref()
@@ -844,10 +846,10 @@ impl<D> Renderer<D> where D: Device {
         } = *back_scene_source_buffers;
 
         let points_buffer =
-            self.allocator.get(points_buffer_id.expect("Where's the points buffer?"));
+            self.allocator.get_buffer(points_buffer_id.expect("Where's the points buffer?"));
         let point_indices_buffer =
             self.allocator
-                .get(point_indices_buffer_id.expect("Where's the point indices buffer?"));
+                .get_buffer(point_indices_buffer_id.expect("Where's the point indices buffer?"));
 
         self.device.upload_to_buffer(dice_indirect_draw_params_buffer,
                                      0,
@@ -900,8 +902,8 @@ impl<D> Renderer<D> where D: Device {
         let indirect_compute_params = self.device.recv_buffer(&indirect_compute_params_receiver);
         let indirect_compute_params: &[u32] = indirect_compute_params.as_slice_of().unwrap();
 
-        self.allocator.free(dice_metadata_buffer_id);
-        self.allocator.free(dice_indirect_draw_params_buffer_id);
+        self.allocator.free_buffer(dice_metadata_buffer_id);
+        self.allocator.free_buffer(dice_indirect_draw_params_buffer_id);
 
         let microline_count =
             indirect_compute_params[BIN_INDIRECT_DRAW_PARAMS_MICROLINE_COUNT_INDEX];
@@ -924,13 +926,13 @@ impl<D> Renderer<D> where D: Device {
                                        .bin_compute_program;
 
         let fill_vertex_buffer_id =
-            self.allocator.allocate::<Fill>(&self.device,
-                                            self.allocated_fill_count as u64,
-                                            BufferTag::Fill);
+            self.allocator.allocate_buffer::<Fill>(&self.device,
+                                                   self.allocated_fill_count as u64,
+                                                   BufferTag::Fill);
         let fill_indirect_draw_params_buffer_id =
-            self.allocator.allocate::<u32>(&self.device,
-                                           8,
-                                           BufferTag::FillIndirectDrawParamsD3D11);
+            self.allocator.allocate_buffer::<u32>(&self.device,
+                                                  8,
+                                                  BufferTag::FillIndirectDrawParamsD3D11);
                                                                     /*
         let fill_storage_id = {
             let device = &self.device;
@@ -951,15 +953,15 @@ impl<D> Renderer<D> where D: Device {
         };
         */
 
-        let fill_vertex_buffer = self.allocator.get(fill_vertex_buffer_id);
-        let microlines_buffer = self.allocator.get(microlines_storage.buffer_id);
-        let tiles_buffer = self.allocator.get(tiles_d3d11_buffer_id);
+        let fill_vertex_buffer = self.allocator.get_buffer(fill_vertex_buffer_id);
+        let microlines_buffer = self.allocator.get_buffer(microlines_storage.buffer_id);
+        let tiles_buffer = self.allocator.get_buffer(tiles_d3d11_buffer_id);
         let propagate_metadata_buffer =
-            self.allocator.get(propagate_metadata_buffer_ids.propagate_metadata);
-        let backdrops_buffer = self.allocator.get(propagate_metadata_buffer_ids.backdrops);
+            self.allocator.get_buffer(propagate_metadata_buffer_ids.propagate_metadata);
+        let backdrops_buffer = self.allocator.get_buffer(propagate_metadata_buffer_ids.backdrops);
 
-        let fill_indirect_draw_params_buffer = self.allocator   
-                                                   .get(fill_indirect_draw_params_buffer_id);
+        let fill_indirect_draw_params_buffer =
+            self.allocator.get_buffer(fill_indirect_draw_params_buffer_id);
         let indirect_draw_params = [6, 0, 0, 0, 0, microlines_storage.count, 0, 0];
         self.device.upload_to_buffer::<u32>(&fill_indirect_draw_params_buffer,
                                             0,
@@ -1183,13 +1185,13 @@ impl<D> Renderer<D> where D: Device {
             _ => unreachable!(),
         };
 
-        let fill_vertex_buffer = self.allocator.get(fill_vertex_buffer_id);
+        let fill_vertex_buffer = self.allocator.get_buffer(fill_vertex_buffer_id);
 
         let mask_storage = self.frame.mask_storage.as_ref().expect("Where's the mask storage?");
         let image_texture = self.device.framebuffer_texture(&mask_storage.framebuffer);
 
-        let tiles_d3d11_buffer = self.allocator.get(tiles_d3d11_buffer_id);
-        let alpha_tiles_buffer = self.allocator.get(alpha_tiles_buffer_id);
+        let tiles_d3d11_buffer = self.allocator.get_buffer(tiles_d3d11_buffer_id);
+        let alpha_tiles_buffer = self.allocator.get_buffer(alpha_tiles_buffer_id);
 
         let timer_query = self.timer_query_cache.alloc(&self.device);
         self.device.begin_timer_query(&timer_query);
@@ -1386,7 +1388,7 @@ impl<D> Renderer<D> where D: Device {
                 let fill_buffer_info =
                     fill_buffer_info.expect("Ran out of space for fills when binning!");
 
-                self.allocator.free(microlines_storage.buffer_id);
+                self.allocator.free_buffer(microlines_storage.buffer_id);
 
                 // TODO(pcwalton): If we run out of space for alpha tile indices, propagate
                 // multiple times.
@@ -1403,7 +1405,7 @@ impl<D> Renderer<D> where D: Device {
                                          &propagate_metadata_buffer_ids,
                                          clip_buffer_ids.as_ref());
 
-                self.allocator.free(propagate_metadata_buffer_ids.backdrops);
+                self.allocator.free_buffer(propagate_metadata_buffer_ids.backdrops);
 
                 // FIXME(pcwalton): Don't unconditionally pass true for copying here.
                 self.reallocate_alpha_tile_pages_if_necessary(true);
@@ -1412,9 +1414,9 @@ impl<D> Renderer<D> where D: Device {
                                             alpha_tiles_buffer_id,
                                             &propagate_tiles_info);
 
-                self.allocator.free(fill_buffer_info.fill_vertex_buffer_id);
-                self.allocator.free(fill_buffer_info.fill_indirect_draw_params_buffer_id);
-                self.allocator.free(alpha_tiles_buffer_id);
+                self.allocator.free_buffer(fill_buffer_info.fill_vertex_buffer_id);
+                self.allocator.free_buffer(fill_buffer_info.fill_indirect_draw_params_buffer_id);
+                self.allocator.free_buffer(alpha_tiles_buffer_id);
 
                 // FIXME(pcwalton): This seems like the wrong place to do this...
                 self.sort_tiles(tiles_d3d11_buffer_id, first_tile_map_buffer_id);
@@ -1467,27 +1469,28 @@ impl<D> Renderer<D> where D: Device {
                                      .expect("GPU tile propagation requires D3D11 programs!")
                                      .propagate_program;
 
-        let tiles_d3d11_buffer = self.allocator.get(tiles_d3d11_buffer_id);
+        let tiles_d3d11_buffer = self.allocator.get_buffer(tiles_d3d11_buffer_id);
         let propagate_metadata_storage_buffer =
-            self.allocator.get(propagate_metadata_buffer_ids.propagate_metadata);
-        let backdrops_storage_buffer = self.allocator.get(propagate_metadata_buffer_ids.backdrops);
+            self.allocator.get_buffer(propagate_metadata_buffer_ids.propagate_metadata);
+        let backdrops_storage_buffer =
+            self.allocator.get_buffer(propagate_metadata_buffer_ids.backdrops);
 
         // TODO(pcwalton): Zero out the Z-buffer on GPU?
-        let z_buffer = self.allocator.get(z_buffer_id);
+        let z_buffer = self.allocator.get_buffer(z_buffer_id);
         let z_buffer_size = self.tile_size();
         let tile_area = z_buffer_size.area() as usize;
         self.device.upload_to_buffer(z_buffer, 0, &vec![0i32; tile_area], BufferTarget::Storage);
 
         // TODO(pcwalton): Initialize the first tiles buffer on GPU?
-        let first_tile_map_storage_buffer = self.allocator.get(first_tile_map_buffer_id);
+        let first_tile_map_storage_buffer = self.allocator.get_buffer(first_tile_map_buffer_id);
         self.device.upload_to_buffer::<FirstTile>(&first_tile_map_storage_buffer,
                                                   0,
                                                   &vec![FirstTile::default(); tile_area],
                                                   BufferTarget::Storage);
 
-        let alpha_tiles_storage_buffer = self.allocator.get(alpha_tiles_buffer_id);
+        let alpha_tiles_storage_buffer = self.allocator.get_buffer(alpha_tiles_buffer_id);
         let fill_indirect_draw_params_buffer =
-            self.allocator.get(fill_indirect_draw_params_buffer_id);
+            self.allocator.get_buffer(fill_indirect_draw_params_buffer_id);
 
         let mut storage_buffers = vec![
             (&propagate_program.draw_metadata_storage_buffer, propagate_metadata_storage_buffer),
@@ -1503,8 +1506,8 @@ impl<D> Renderer<D> where D: Device {
         if let Some(clip_buffer_ids) = clip_buffer_ids {
             let clip_metadata_buffer_id =
                 clip_buffer_ids.metadata.expect("Where's the clip metadata storage?");
-            let clip_metadata_buffer = self.allocator.get(clip_metadata_buffer_id);
-            let clip_tile_buffer = self.allocator.get(clip_buffer_ids.tiles);
+            let clip_metadata_buffer = self.allocator.get_buffer(clip_metadata_buffer_id);
+            let clip_tile_buffer = self.allocator.get_buffer(clip_buffer_ids.tiles);
             storage_buffers.push((&propagate_program.clip_metadata_storage_buffer,
                                   clip_metadata_buffer));
             storage_buffers.push((&propagate_program.clip_tiles_storage_buffer, clip_tile_buffer));
@@ -1560,8 +1563,8 @@ impl<D> Renderer<D> where D: Device {
                                 .expect("Tile sorting requires D3D11 programs!")
                                 .sort_program;
 
-        let tiles_d3d11_buffer = self.allocator.get(tiles_d3d11_buffer_id);
-        let first_tile_map_buffer = self.allocator.get(first_tile_map_buffer_id);
+        let tiles_d3d11_buffer = self.allocator.get_buffer(tiles_d3d11_buffer_id);
+        let first_tile_map_buffer = self.allocator.get_buffer(first_tile_map_buffer_id);
 
         let tile_count = self.framebuffer_tile_size().area();
 
@@ -1592,9 +1595,9 @@ impl<D> Renderer<D> where D: Device {
     }
 
     fn allocate_z_buffer(&mut self) -> BufferID {
-        self.allocator.allocate::<i32>(&self.device,
-                                       self.tile_size().area() as u64,
-                                       BufferTag::ZBufferD3D11)
+        self.allocator.allocate_buffer::<i32>(&self.device,
+                                              self.tile_size().area() as u64,
+                                              BufferTag::ZBufferD3D11)
     }
 
     fn tile_size(&self) -> Vector2I {
@@ -1605,15 +1608,15 @@ impl<D> Renderer<D> where D: Device {
 
     fn allocate_first_tile_map(&mut self) -> BufferID {
         let tile_size = self.tile_size();
-        self.allocator.allocate::<FirstTile>(&self.device,
-                                             tile_size.area() as u64,
-                                             BufferTag::FirstTileD3D11)
+        self.allocator.allocate_buffer::<FirstTile>(&self.device,
+                                                    tile_size.area() as u64,
+                                                    BufferTag::FirstTileD3D11)
     }
 
     fn allocate_alpha_tile_info(&mut self, index_count: u32) -> BufferID {
-        self.allocator.allocate::<AlphaTileD3D11>(&self.device,
-                                                  index_count as u64,
-                                                  BufferTag::AlphaTileD3D11)
+        self.allocator.allocate_buffer::<AlphaTileD3D11>(&self.device,
+                                                         index_count as u64,
+                                                         BufferTag::AlphaTileD3D11)
     }
 
     /*
@@ -1834,8 +1837,8 @@ impl<D> Renderer<D> where D: Device {
             }
         }
 
-        let tiles_d3d11_buffer = self.allocator.get(tiles_d3d11_buffer_id);
-        let first_tile_map_storage_buffer = self.allocator.get(first_tile_map_buffer_id);
+        let tiles_d3d11_buffer = self.allocator.get_buffer(tiles_d3d11_buffer_id);
+        let first_tile_map_storage_buffer = self.allocator.get_buffer(first_tile_map_buffer_id);
 
         let framebuffer_tile_size = self.framebuffer_tile_size().0;
         let compute_dimensions = ComputeDimensions {
@@ -1874,7 +1877,7 @@ impl<D> Renderer<D> where D: Device {
             z_buffer_id: BufferID) {
         let draw_viewport = self.draw_viewport();
 
-        let z_buffer = self.allocator.get(z_buffer_id);
+        let z_buffer = self.allocator.get_buffer(z_buffer_id);
         // FIXME(pcwalton)
         //let z_buffer_texture = self.device.framebuffer_texture(&z_buffer.framebuffer);
 
@@ -2386,8 +2389,8 @@ impl<D> Frame<D> where D: Device {
            quad_vertex_indices_buffer_id: BufferID,
            window_size: Vector2I)
            -> Frame<D> {
-        let quad_vertex_positions_buffer = allocator.get(quad_vertex_positions_buffer_id);
-        let quad_vertex_indices_buffer = allocator.get(quad_vertex_indices_buffer_id);
+        let quad_vertex_positions_buffer = allocator.get_buffer(quad_vertex_positions_buffer_id);
+        let quad_vertex_indices_buffer = allocator.get_buffer(quad_vertex_indices_buffer_id);
 
         let blit_vertex_array = BlitVertexArray::new(device,
                                                      &blit_program,
@@ -2799,23 +2802,23 @@ impl SceneSourceBuffers {
         let needed_point_indices_capacity = (segments.indices.len() as u32).next_power_of_two();
         if self.points_capacity < needed_points_capacity {
             self.points_buffer =
-                Some(allocator.allocate::<Vector2F>(device,
-                                                    needed_points_capacity as u64,
-                                                    BufferTag::PointsD3D11));
+                Some(allocator.allocate_buffer::<Vector2F>(device,
+                                                           needed_points_capacity as u64,
+                                                           BufferTag::PointsD3D11));
             self.points_capacity = needed_points_capacity;
         }
         if self.point_indices_capacity < needed_point_indices_capacity {
-            self.point_indices_buffer =
-                Some(allocator.allocate::<SegmentIndices>(device,
-                                                          needed_point_indices_capacity as u64,
-                                                          BufferTag::PointIndicesD3D11));
+            self.point_indices_buffer = Some(allocator.allocate_buffer::<SegmentIndices>(
+                device,
+                needed_point_indices_capacity as u64,
+                BufferTag::PointIndicesD3D11));
             self.point_indices_capacity = needed_point_indices_capacity;
         }
-        device.upload_to_buffer(allocator.get(self.points_buffer.unwrap()),
+        device.upload_to_buffer(allocator.get_buffer(self.points_buffer.unwrap()),
                                 0,
                                 &segments.points,
                                 BufferTarget::Storage);
-        device.upload_to_buffer(allocator.get(self.point_indices_buffer.unwrap()),
+        device.upload_to_buffer(allocator.get_buffer(self.point_indices_buffer.unwrap()),
                                 0,
                                 &segments.indices,
                                 BufferTarget::Storage);
