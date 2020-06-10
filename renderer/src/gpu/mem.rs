@@ -32,6 +32,7 @@ pub(crate) struct GPUMemoryAllocator<D> where D: Device {
     buffers_in_use: FxHashMap<BufferID, BufferAllocation<D>>,
     textures_in_use: FxHashMap<TextureID, TextureAllocation<D>>,
     framebuffers_in_use: FxHashMap<FramebufferID, FramebufferAllocation<D>>,
+    free_buffers: Vec<FreeBuffer<D>>,
     next_buffer_id: BufferID,
     next_texture_id: TextureID,
     next_framebuffer_id: FramebufferID,
@@ -55,6 +56,11 @@ struct FramebufferAllocation<D> where D: Device {
     framebuffer: D::Framebuffer,
     descriptor: TextureDescriptor,
     tag: FramebufferTag,
+}
+
+struct FreeBuffer<D> where D: Device {
+    id: BufferID,
+    allocation: BufferAllocation<D>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -126,6 +132,7 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
             buffers_in_use: FxHashMap::default(),
             textures_in_use: FxHashMap::default(),
             framebuffers_in_use: FxHashMap::default(),
+            free_buffers: vec![],
             next_buffer_id: BufferID(0),
             next_texture_id: TextureID(0),
             next_framebuffer_id: FramebufferID(0),
@@ -136,6 +143,18 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
 
     pub(crate) fn allocate_buffer<T>(&mut self, device: &D, size: u64, tag: BufferTag)
                                      -> BufferID {
+        // TODO(pcwalton): This should be smarter! Use size classes!
+        let byte_size = size * mem::size_of::<T>() as u64;
+        for free_buffer_index in 0..self.free_buffers.len() {
+            if self.free_buffers[free_buffer_index].allocation.size == byte_size {
+                let mut free_buffer = self.free_buffers.remove(free_buffer_index);
+                free_buffer.allocation.tag = tag;
+                self.bytes_committed += free_buffer.allocation.size;
+                self.buffers_in_use.insert(free_buffer.id, free_buffer.allocation);
+                return free_buffer.id;
+            }
+        }
+
         let buffer = device.create_buffer(BufferUploadMode::Dynamic);
         device.allocate_buffer::<T>(&buffer,
                                      BufferData::Uninitialized(size as usize),
@@ -143,7 +162,6 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         let id = self.next_buffer_id;
         self.next_buffer_id.0 += 1;
 
-        let byte_size = size * mem::size_of::<T>() as u64;
         self.buffers_in_use.insert(id, BufferAllocation { buffer, size: byte_size, tag });
         self.bytes_allocated += byte_size;
         self.bytes_committed += byte_size;
@@ -208,8 +226,8 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         let allocation = self.buffers_in_use
                              .remove(&id)
                              .expect("Attempted to free unallocated buffer!");
-        self.bytes_allocated -= allocation.size;
         self.bytes_committed -= allocation.size;
+        self.free_buffers.push(FreeBuffer { id, allocation });
     }
 
     pub(crate) fn free_texture(&mut self, id: TextureID) {
