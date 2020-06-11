@@ -699,6 +699,11 @@ void main(){
     ivec2 firstTileSubCoord = ivec2(gl_LocalInvocationID . xy)* ivec2(1, 4);
     ivec2 firstFragCoord = tileCoord * ivec2(uTileSize)+ firstTileSubCoord;
 
+
+    int tileIndex = iFirstTileMap[tileCoord . x + uFramebufferTileSize . x * tileCoord . y];
+    if(tileIndex < 0 && uLoadAction != 0)
+        return;
+
     mat4 destColors;
     for(int subY = 0;subY < 4;subY ++){
         if(uLoadAction == 0){
@@ -709,7 +714,6 @@ void main(){
         }
     }
 
-    int tileIndex = iFirstTileMap[tileCoord . x + uFramebufferTileSize . x * tileCoord . y];
     while(tileIndex >= 0){
         for(int subY = 0;subY < 4;subY ++){
             ivec2 tileSubCoord = firstTileSubCoord + ivec2(0, subY);

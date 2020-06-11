@@ -13,11 +13,11 @@
 use crate::concurrent::executor::Executor;
 use crate::gpu::options::RendererLevel;
 use crate::gpu::renderer::BlendModeExt;
-use crate::gpu_data::{AlphaTileId, BackdropInfo, Clip, ClippedPathInfo, DiceMetadata};
-use crate::gpu_data::{DrawTileBatchD3D11, Fill, PathBatchIndex, PathSource, PrepareTilesCPUInfo};
-use crate::gpu_data::{PrepareTilesGPUInfo, PrepareTilesModalInfo, PropagateMetadata};
-use crate::gpu_data::{RenderCommand, SegmentIndices, Segments, TileBatchDataD3D11, TileBatchId};
-use crate::gpu_data::{TileBatchTexture, TileObjectPrimitive, TilePathInfo};
+use crate::gpu_data::{AlphaTileId, BackdropInfoD3D11, Clip, ClippedPathInfo, DiceMetadataD3D11};
+use crate::gpu_data::{DrawTileBatchD3D11, Fill, PathBatchIndex, PathSource};
+use crate::gpu_data::{PrepareTilesInfoD3D11, PropagateMetadataD3D11};
+use crate::gpu_data::{RenderCommand, SegmentIndices, SegmentsD3D11, TileBatchDataD3D11, TileBatchId};
+use crate::gpu_data::{TileBatchTexture, TileObjectPrimitive, TilePathInfoD3D11};
 use crate::options::{PrepareMode, PreparedBuildOptions, PreparedRenderTransform};
 use crate::paint::{PaintId, PaintInfo, PaintMetadata};
 use crate::scene::{ClipPathId, DisplayItem, DrawPath, DrawPathId, LastSceneInfo, PathId};
@@ -195,7 +195,7 @@ impl<'a, 'b, 'c, 'd> SceneBuilder<'a, 'b, 'c, 'd> {
 
         if scene_is_dirty {
             let built_segments = BuiltSegments::from_scene(&self.scene);
-            self.sink.listener.send(RenderCommand::UploadScene {
+            self.sink.listener.send(RenderCommand::UploadSceneD3D11 {
                 draw_segments: built_segments.draw_segments,
                 clip_segments: built_segments.clip_segments,
             });
@@ -311,7 +311,7 @@ impl<'a, 'b, 'c, 'd> SceneBuilder<'a, 'b, 'c, 'd> {
 
     fn send_fills(&self, fills: Vec<Fill>) {
         if !fills.is_empty() {
-            self.sink.listener.send(RenderCommand::AddFills(fills));
+            self.sink.listener.send(RenderCommand::AddFillsD3D9(fills));
         }
     }
 
@@ -354,7 +354,7 @@ impl<'a, 'b, 'c, 'd> SceneBuilder<'a, 'b, 'c, 'd> {
                        built_paths: Option<BuiltPaths>,
                        prepare_mode: &PrepareMode) {
         match self.sink.renderer_level {
-            RendererLevel::D3D9 => self.sink.listener.send(RenderCommand::FlushFills),
+            RendererLevel::D3D9 => self.sink.listener.send(RenderCommand::FlushFillsD3D9),
             RendererLevel::D3D11 => {}
         }
 
@@ -631,30 +631,25 @@ impl TileBatchDataD3D11 {
             tile_count: 0,
             segment_count: 0,
             path_source,
-            modal: match mode {
-                PrepareMode::CPU => {
-                    PrepareTilesModalInfo::CPU(PrepareTilesCPUInfo {
-                        z_buffer: DenseTileMap::from_builder(|_| 0, tile_rect),
-                        tiles: vec![],
-                    })
-                }
+            prepare_info: match *mode {
+                PrepareMode::CPU => unimplemented!(),
                 PrepareMode::TransformCPUBinGPU => {
-                    PrepareTilesModalInfo::GPU(PrepareTilesGPUInfo {
+                    PrepareTilesInfoD3D11 {
                         backdrops: vec![],
                         propagate_metadata: vec![],
                         dice_metadata: vec![],
                         tile_path_info: vec![],
                         transform: Transform2F::default(),
-                    })
+                    }
                 }
                 PrepareMode::GPU { ref transform } => {
-                    PrepareTilesModalInfo::GPU(PrepareTilesGPUInfo {
+                    PrepareTilesInfoD3D11 {
                         backdrops: vec![],
                         propagate_metadata: vec![],
                         dice_metadata: vec![],
                         tile_path_info: vec![],
                         transform: *transform,
-                    })
+                    }
                 }
             },
             clipped_path_info: None,
@@ -672,6 +667,7 @@ impl TileBatchDataD3D11 {
 
         let z_write = path.occluders.is_some();
 
+        /*
         match self.modal {
             PrepareTilesModalInfo::CPU(ref mut cpu_info) if z_write => {
                 let tiles = match path.data {
@@ -701,13 +697,14 @@ impl TileBatchDataD3D11 {
                 }
             }
             PrepareTilesModalInfo::GPU(ref mut gpu_info) => {
-                gpu_info.propagate_metadata.push(PropagateMetadata {
+                */
+                self.prepare_info.propagate_metadata.push(PropagateMetadataD3D11 {
                     tile_rect: path.tile_bounds,
                     tile_offset: self.tile_count,
                     path_index: batch_path_index,
                     z_write: z_write as u32,
                     clip_path_index: batch_clip_path_index.unwrap_or(PathBatchIndex::none()),
-                    backdrop_offset: gpu_info.backdrops.len() as u32,
+                    backdrop_offset: self.prepare_info.backdrops.len() as u32,
                     pad0: 0,
                     pad1: 0,
                     pad2: 0,
@@ -715,9 +712,9 @@ impl TileBatchDataD3D11 {
 
                 match path.data {
                     BuiltPathData::CPU(ref data) => {
-                        gpu_info.backdrops.reserve(data.backdrops.len());
+                        self.prepare_info.backdrops.reserve(data.backdrops.len());
                         for (tile_x_offset, backdrop) in data.backdrops.iter().enumerate() {
-                            gpu_info.backdrops.push(BackdropInfo {
+                            self.prepare_info.backdrops.push(BackdropInfoD3D11 {
                                 initial_backdrop: *backdrop as i32,
                                 tile_x_offset: tile_x_offset as i32,
                                 path_index: batch_path_index,
@@ -725,7 +722,7 @@ impl TileBatchDataD3D11 {
                         }
                     }
                     BuiltPathData::TransformCPUBinGPU(_) | BuiltPathData::GPU => {
-                        init_backdrops(&mut gpu_info.backdrops,
+                        init_backdrops(&mut self.prepare_info.backdrops,
                                        batch_path_index,
                                        path.tile_bounds);
                     }
@@ -738,13 +735,13 @@ impl TileBatchDataD3D11 {
                     PathSource::Clip => &last_scene.clip_segment_ranges,
                 };
                 let segment_range = &segment_ranges[global_path_id.0 as usize];
-                gpu_info.dice_metadata.push(DiceMetadata {
+                self.prepare_info.dice_metadata.push(DiceMetadataD3D11 {
                     first_batch_segment_index: self.segment_count, 
                     first_global_segment_index: segment_range.start,
                     global_path_id,
                     pad: 0,
                 });
-                gpu_info.tile_path_info.push(TilePathInfo {
+                self.prepare_info.tile_path_info.push(TilePathInfoD3D11 {
                     tile_min_x: path.tile_bounds.min_x() as i16,
                     tile_min_y: path.tile_bounds.min_y() as i16,
                     tile_max_x: path.tile_bounds.max_x() as i16,
@@ -756,8 +753,9 @@ impl TileBatchDataD3D11 {
                 });
                 self.tile_count += path.tile_bounds.area() as u32;
                 self.segment_count += segment_range.end - segment_range.start;
+            /*
             }
-        }
+        }*/
 
         if batch_clip_path_index.is_some() {
             if self.clipped_path_info.is_none() {
@@ -793,17 +791,17 @@ impl TileBatchDataD3D11 {
     }
 }
 
-fn init_backdrops(backdrops: &mut Vec<BackdropInfo>,
+fn init_backdrops(backdrops: &mut Vec<BackdropInfoD3D11>,
                   path_index: PathBatchIndex,
                   tile_rect: RectI) {
     for tile_x_offset in 0..tile_rect.width() {
-        backdrops.push(BackdropInfo { initial_backdrop: 0, path_index, tile_x_offset });
+        backdrops.push(BackdropInfoD3D11 { initial_backdrop: 0, path_index, tile_x_offset });
     }
 }
 
 struct BuiltSegments {
-    draw_segments: Segments,
-    clip_segments: Segments,
+    draw_segments: SegmentsD3D11,
+    clip_segments: SegmentsD3D11,
     draw_segment_ranges: Vec<Range<u32>>,
     clip_segment_ranges: Vec<Range<u32>>,
 }
@@ -811,8 +809,8 @@ struct BuiltSegments {
 impl BuiltSegments {
     fn from_scene(scene: &Scene) -> BuiltSegments {
         let mut built_segments = BuiltSegments {
-            draw_segments: Segments::new(),
-            clip_segments: Segments::new(),
+            draw_segments: SegmentsD3D11::new(),
+            clip_segments: SegmentsD3D11::new(),
             draw_segment_ranges: Vec::with_capacity(scene.draw_paths().len()),
             clip_segment_ranges: Vec::with_capacity(scene.clip_paths().len()),
         };
@@ -830,9 +828,9 @@ impl BuiltSegments {
     }
 }
 
-impl Segments {
-    fn new() -> Segments {
-        Segments { points: vec![], indices: vec![] }
+impl SegmentsD3D11 {
+    fn new() -> SegmentsD3D11 {
+        SegmentsD3D11 { points: vec![], indices: vec![] }
     }
 
     fn add_path(&mut self, outline: &Outline) -> Range<u32> {

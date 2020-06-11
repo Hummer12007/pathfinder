@@ -78,6 +78,11 @@ void main() {
     ivec2 firstTileSubCoord = ivec2(gl_LocalInvocationID.xy) * ivec2(1, 4);
     ivec2 firstFragCoord = tileCoord * ivec2(uTileSize) + firstTileSubCoord;
 
+    // Quick exit if this is guaranteed to be empty.
+    int tileIndex = iFirstTileMap[tileCoord.x + uFramebufferTileSize.x * tileCoord.y];
+    if (tileIndex < 0 && uLoadAction != LOAD_ACTION_CLEAR)
+        return;
+
     mat4 destColors;
     for (int subY = 0; subY < 4; subY++) {
         if (uLoadAction == LOAD_ACTION_CLEAR) {
@@ -88,7 +93,6 @@ void main() {
         }
     }
 
-    int tileIndex = iFirstTileMap[tileCoord.x + uFramebufferTileSize.x * tileCoord.y];
     while (tileIndex >= 0) {
         for (int subY = 0; subY < 4; subY++) {
             ivec2 tileSubCoord = firstTileSubCoord + ivec2(0, subY);

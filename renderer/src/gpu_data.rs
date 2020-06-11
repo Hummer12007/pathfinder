@@ -66,17 +66,17 @@ pub enum RenderCommand {
     UploadTextureMetadata(Vec<TextureMetadataEntry>),
 
     // Adds fills to the queue.
-    AddFills(Vec<Fill>),
+    AddFillsD3D9(Vec<Fill>),
 
     // Flushes the queue of fills.
-    FlushFills,
+    FlushFillsD3D9,
 
     /// Upload a scene to GPU.
     /// 
     /// This will only be sent if dicing and binning is done on GPU.
-    UploadScene {
-        draw_segments: Segments,
-        clip_segments: Segments,
+    UploadSceneD3D11 {
+        draw_segments: SegmentsD3D11,
+        clip_segments: SegmentsD3D11,
     },
 
     // Pushes a render target onto the stack. Draw commands go to the render target on top of the
@@ -126,8 +126,8 @@ pub struct TileBatchDataD3D11 {
     pub tile_count: u32,
     /// The total number of segments in this batch.
     pub segment_count: u32,
-    /// Information about a batch of tiles specific to the rendering mode (CPU or GPU).
-    pub modal: PrepareTilesModalInfo,
+    /// Information needed to prepare the tiles.
+    pub prepare_info: PrepareTilesInfoD3D11,
     /// Where the paths come from (draw or clip).
     pub path_source: PathSource,
     /// Information about clips applied to paths, if any of the paths have clips.
@@ -141,48 +141,29 @@ pub enum PathSource {
     Clip,
 }
 
-/// Information about a batch of tiles to be prepared specific to the rendering mode (CPU or GPU).
-#[derive(Clone, Debug)]
-pub enum PrepareTilesModalInfo {
-    CPU(PrepareTilesCPUInfo),
-    GPU(PrepareTilesGPUInfo),
-}
-
-/// Information about a batch of tiles to be prepared on CPU.
-#[derive(Clone, Debug)]
-pub struct PrepareTilesCPUInfo {
-    /// The Z-buffer used for occlusion culling.
-    pub z_buffer: DenseTileMap<i32>,
-
-    /// Information about all the allocated tiles.
-    /// 
-    /// The backdrop values will already be summed.
-    pub tiles: Vec<TileObjectPrimitive>,
-}
-
 /// Information about a batch of tiles to be prepared on GPU.
 #[derive(Clone, Debug)]
-pub struct PrepareTilesGPUInfo {
+pub struct PrepareTilesInfoD3D11 {
     /// Initial backdrop values for each tile column, packed together.
-    pub backdrops: Vec<BackdropInfo>,
+    pub backdrops: Vec<BackdropInfoD3D11>,
 
     /// Mapping from path index to metadata needed to compute propagation on GPU.
     /// 
     /// This contains indices into the `tiles` vector.
-    pub propagate_metadata: Vec<PropagateMetadata>,
+    pub propagate_metadata: Vec<PropagateMetadataD3D11>,
 
     /// Metadata about each path that will be diced (flattened).
-    pub dice_metadata: Vec<DiceMetadata>,
+    pub dice_metadata: Vec<DiceMetadataD3D11>,
 
     /// Sparse information about all the allocated tiles.
-    pub tile_path_info: Vec<TilePathInfo>,
+    pub tile_path_info: Vec<TilePathInfoD3D11>,
 
     /// A transform to apply to the segments.
     pub transform: Transform2F,
 }
 
 #[derive(Clone, Debug)]
-pub struct Segments {
+pub struct SegmentsD3D11 {
     pub points: Vec<Vector2F>,
     pub indices: Vec<SegmentIndices>,
 }
@@ -291,7 +272,7 @@ pub struct AlphaTileD3D11 {
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
-pub struct TilePathInfo {
+pub struct TilePathInfoD3D11 {
     pub tile_min_x: i16,
     pub tile_min_y: i16,
     pub tile_max_x: i16,
@@ -306,7 +287,7 @@ pub struct TilePathInfo {
 // TODO(pcwalton): Pack better!
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
-pub struct PropagateMetadata {
+pub struct PropagateMetadataD3D11 {
     pub tile_rect: RectI,
     pub tile_offset: u32,
     pub path_index: PathBatchIndex,
@@ -321,7 +302,7 @@ pub struct PropagateMetadata {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
-pub struct DiceMetadata {
+pub struct DiceMetadataD3D11 {
     pub global_path_id: PathId,
     pub first_global_segment_index: u32,
     pub first_batch_segment_index: u32,
@@ -390,7 +371,7 @@ pub struct BinSegment {
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
-pub struct BackdropInfo {
+pub struct BackdropInfoD3D11 {
     pub initial_backdrop: i32,
     // Column number, where 0 is the leftmost column in the tile rect.
     pub tile_x_offset: i32,
@@ -399,7 +380,7 @@ pub struct BackdropInfo {
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub(crate) struct Microline {
+pub(crate) struct MicrolineD3D11 {
     from_x_px: i16,
     from_y_px: i16,
     to_x_px: i16,
@@ -409,6 +390,12 @@ pub(crate) struct Microline {
     to_x_subpx: u8,
     to_y_subpx: u8,
     path_index: u32,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub(crate) struct FirstTileD3D11 {
+    first_tile: i32,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -468,13 +455,13 @@ impl Debug for RenderCommand {
             RenderCommand::UploadTextureMetadata(ref metadata) => {
                 write!(formatter, "UploadTextureMetadata(x{})", metadata.len())
             }
-            RenderCommand::AddFills(ref fills) => {
-                write!(formatter, "AddFills(x{})", fills.len())
+            RenderCommand::AddFillsD3D9(ref fills) => {
+                write!(formatter, "AddFillsD3D9(x{})", fills.len())
             }
-            RenderCommand::FlushFills => write!(formatter, "FlushFills"),
-            RenderCommand::UploadScene { ref draw_segments, ref clip_segments } => {
+            RenderCommand::FlushFillsD3D9 => write!(formatter, "FlushFills"),
+            RenderCommand::UploadSceneD3D11 { ref draw_segments, ref clip_segments } => {
                 write!(formatter,
-                       "UploadScene(DP x{}, DI x{}, CP x{}, CI x{})",
+                       "UploadSceneD3D11(DP x{}, DI x{}, CP x{}, CI x{})",
                        draw_segments.points.len(),
                        draw_segments.indices.len(),
                        clip_segments.points.len(),
@@ -506,5 +493,12 @@ impl Debug for RenderCommand {
                 write!(formatter, "Finish({} ms)", cpu_build_time.as_secs_f64() * 1000.0)
             }
         }
+    }
+}
+
+impl Default for FirstTileD3D11 {
+    #[inline]
+    fn default() -> FirstTileD3D11 {
+        FirstTileD3D11 { first_tile: -1 }
     }
 }

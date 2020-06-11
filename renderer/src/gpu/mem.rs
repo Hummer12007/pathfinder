@@ -11,11 +11,9 @@
 //! GPU memory management.
 
 use crate::gpu::options::RendererLevel;
-use crate::gpu::shaders::{ClipTileCombineProgram, ClipTileCombineVertexArray, ClipTileCopyProgram};
-use crate::gpu::shaders::{ClipTileCopyVertexArray, CopyTileProgram, CopyTileVertexArray};
-use crate::gpu::shaders::{FillProgram, FillVertexArray, TileProgram, TileVertexArray};
-use crate::gpu_data::{AlphaTileD3D11, BackdropInfo, Clip, DiceMetadata, Fill, Microline};
-use crate::gpu_data::{PropagateMetadata, TileD3D11, TileObjectPrimitive, TilePathInfo};
+use crate::gpu::shaders::{CopyTileProgram, CopyTileVertexArray};
+use crate::gpu_data::{AlphaTileD3D11, Clip, Fill};
+use crate::gpu_data::{TileD3D11, TileObjectPrimitive};
 use crate::tiles::{TILE_HEIGHT, TILE_WIDTH};
 use fxhash::FxHashMap;
 use pathfinder_geometry::vector::{Vector2I, vec2i};
@@ -313,6 +311,8 @@ impl TextureDescriptor {
     }
 }
 
+/*
+
 // Old allocator:
 
 const TEXTURE_CACHE_SIZE: usize = 8;
@@ -597,11 +597,9 @@ pub(crate) struct ClipVertexStorage<D> where D: Device {
     pub(crate) size: u64,
 }
 
-#[derive(Clone, Copy)]
-#[repr(C)]
-pub(crate) struct FirstTile {
-    first_tile: i32,
-}
+*/
+
+/*
 
 impl<D> DiceMetadataStorage<D> where D: Device {
     pub(crate) fn new(device: &D, size: u64) -> DiceMetadataStorage<D> {
@@ -751,6 +749,8 @@ impl<D> Storage for ClipVertexStorage<D> where D: Device {
     }
 }
 
+*/
+
 // Texture cache
 
 /*
@@ -823,6 +823,7 @@ impl<D> ZBuffer<D> where D: Device {
     }
 }
 
+/*
 impl<D> Storage for ZBuffer<D> where D: Device {
     fn gpu_bytes_allocated(&self) -> u64 {
         let mut size = self.tile_size.area() as u64 * 4;
@@ -832,10 +833,4 @@ impl<D> Storage for ZBuffer<D> where D: Device {
         size
     }
 }
-
-impl Default for FirstTile {
-    #[inline]
-    fn default() -> FirstTile {
-        FirstTile { first_tile: -1 }
-    }
-}
+*/

@@ -83,12 +83,12 @@ kernel void main0(constant int2& uAlphaTileRange [[buffer(1)]], const device bFi
     int fillIndex = int(_294.iTiles[(tileIndex * 4u) + 1u]);
     int backdrop = int(_294.iTiles[(tileIndex * 4u) + 3u]) >> 24;
     float4 coverages = float4(float(backdrop));
-    int clipTileIndex = int(_284.iAlphaTiles[(batchAlphaTileIndex * 2u) + 1u]);
     int param = fillIndex;
     int2 param_1 = tileSubCoord;
-    float4 _341 = accumulateCoverageForFillList(param, param_1, v_148, uAreaLUT, uAreaLUTSmplr);
-    coverages += _341;
+    float4 _334 = accumulateCoverageForFillList(param, param_1, v_148, uAreaLUT, uAreaLUTSmplr);
+    coverages += _334;
     coverages = fast::clamp(abs(coverages), float4(0.0), float4(1.0));
+    int clipTileIndex = int(_284.iAlphaTiles[(batchAlphaTileIndex * 2u) + 1u]);
     if (clipTileIndex >= 0)
     {
         uint param_2 = uint(clipTileIndex);

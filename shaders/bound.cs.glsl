@@ -1,6 +1,6 @@
 #version 430
 
-// pathfinder/shaders/init.cs.glsl
+// pathfinder/shaders/bound.cs.glsl
 //
 // Copyright © 2020 The Pathfinder Project Developers.
 //

@@ -33,9 +33,9 @@ SHADERS=\
 
 COMPUTE_SHADERS=\
 	bin.cs.glsl \
+	bound.cs.glsl \
 	dice.cs.glsl \
 	fill.cs.glsl \
-	init.cs.glsl \
 	propagate.cs.glsl \
 	sort.cs.glsl \
 	tile.cs.glsl \

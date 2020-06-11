@@ -21,6 +21,9 @@ const CLIP_TILE_INSTANCE_SIZE: usize = 16;
 
 pub const MAX_FILLS_PER_BATCH: usize = 0x10000;
 
+pub const BOUND_WORKGROUP_SIZE: u32 = 64;
+pub const DICE_WORKGROUP_SIZE: u32 = 64;
+pub const BIN_WORKGROUP_SIZE: u32 = 64;
 pub const PROPAGATE_WORKGROUP_SIZE: u32 = 64;
 pub const SORT_WORKGROUP_SIZE: u32 = 64;
 
@@ -53,16 +56,16 @@ impl<D> BlitVertexArray<D> where D: Device {
     }
 }
 
-pub struct BlitBufferVertexArray<D> where D: Device {
+pub struct BlitBufferVertexArrayD3D11<D> where D: Device {
     pub vertex_array: D::VertexArray,
 }
 
-impl<D> BlitBufferVertexArray<D> where D: Device {
+impl<D> BlitBufferVertexArrayD3D11<D> where D: Device {
     pub fn new(device: &D,
-               blit_buffer_program: &BlitBufferProgram<D>,
+               blit_buffer_program: &BlitBufferProgramD3D11<D>,
                quad_vertex_positions_buffer: &D::Buffer,
                quad_vertex_indices_buffer: &D::Buffer)
-               -> BlitBufferVertexArray<D> {
+               -> BlitBufferVertexArrayD3D11<D> {
         let vertex_array = device.create_vertex_array();
         let position_attr = device.get_vertex_attr(&blit_buffer_program.program,
                                                    "Position").unwrap();
@@ -79,7 +82,7 @@ impl<D> BlitBufferVertexArray<D> where D: Device {
         });
         device.bind_buffer(&vertex_array, quad_vertex_indices_buffer, BufferTarget::Index);
 
-        BlitBufferVertexArray { vertex_array }
+        BlitBufferVertexArrayD3D11 { vertex_array }
     }
 }
 
@@ -112,21 +115,17 @@ impl<D> ClearVertexArray<D> where D: Device {
     }
 }
 
-pub struct FillVertexArray<D> where D: Device {
+pub struct FillVertexArrayD3D9<D> where D: Device {
     pub vertex_array: D::VertexArray,
 }
 
-impl<D> FillVertexArray<D>
-where
-    D: Device,
-{
-    pub fn new(
-        device: &D,
-        fill_program: &FillRasterProgram<D>,
-        vertex_buffer: &D::Buffer,
-        quad_vertex_positions_buffer: &D::Buffer,
-        quad_vertex_indices_buffer: &D::Buffer,
-    ) -> FillVertexArray<D> {
+impl<D> FillVertexArrayD3D9<D> where D: Device {
+    pub fn new(device: &D,
+               fill_program: &FillProgramD3D9<D>,
+               vertex_buffer: &D::Buffer,
+               quad_vertex_positions_buffer: &D::Buffer,
+               quad_vertex_indices_buffer: &D::Buffer)
+               -> FillVertexArrayD3D9<D> {
         let vertex_array = device.create_vertex_array();
 
         let tess_coord_attr = device.get_vertex_attr(&fill_program.program, "TessCoord").unwrap();
@@ -165,21 +164,21 @@ where
         });
         device.bind_buffer(&vertex_array, quad_vertex_indices_buffer, BufferTarget::Index);
 
-        FillVertexArray { vertex_array }
+        FillVertexArrayD3D9 { vertex_array }
     }
 }
 
-pub struct TileVertexArray<D> where D: Device {
+pub struct TileVertexArrayD3D9<D> where D: Device {
     pub vertex_array: D::VertexArray,
 }
 
-impl<D> TileVertexArray<D> where D: Device {
+impl<D> TileVertexArrayD3D9<D> where D: Device {
     pub fn new(device: &D,
-               tile_program: &TileRasterProgram<D>,
+               tile_program: &TileProgramD3D9<D>,
                tile_vertex_buffer: &D::Buffer,
                quad_vertex_positions_buffer: &D::Buffer,
                quad_vertex_indices_buffer: &D::Buffer)
-               -> TileVertexArray<D> {
+               -> TileVertexArrayD3D9<D> {
         let vertex_array = device.create_vertex_array();
 
         let tile_offset_attr =
@@ -252,7 +251,7 @@ impl<D> TileVertexArray<D> where D: Device {
         });
         device.bind_buffer(&vertex_array, quad_vertex_indices_buffer, BufferTarget::Index);
 
-        TileVertexArray { vertex_array }
+        TileVertexArrayD3D9 { vertex_array }
     }
 }
 
@@ -288,17 +287,17 @@ impl<D> CopyTileVertexArray<D> where D: Device {
     }
 }
 
-pub struct ClipTileCopyVertexArray<D> where D: Device {
+pub struct ClipTileCopyVertexArrayD3D9<D> where D: Device {
     pub vertex_array: D::VertexArray,
 }
 
-impl<D> ClipTileCopyVertexArray<D> where D: Device {
+impl<D> ClipTileCopyVertexArrayD3D9<D> where D: Device {
     pub fn new(device: &D,
-               clip_tile_copy_program: &ClipTileCopyProgram<D>,
+               clip_tile_copy_program: &ClipTileCopyProgramD3D9<D>,
                vertex_buffer: &D::Buffer,
                quad_vertex_positions_buffer: &D::Buffer,
                quad_vertex_indices_buffer: &D::Buffer)
-               -> ClipTileCopyVertexArray<D> {
+               -> ClipTileCopyVertexArrayD3D9<D> {
         let vertex_array = device.create_vertex_array();
 
         let tile_offset_attr =
@@ -328,21 +327,21 @@ impl<D> ClipTileCopyVertexArray<D> where D: Device {
         });
         device.bind_buffer(&vertex_array, quad_vertex_indices_buffer, BufferTarget::Index);
 
-        ClipTileCopyVertexArray { vertex_array }
+        ClipTileCopyVertexArrayD3D9 { vertex_array }
     }
 }
 
-pub struct ClipTileCombineVertexArray<D> where D: Device {
+pub struct ClipTileCombineVertexArrayD3D9<D> where D: Device {
     pub vertex_array: D::VertexArray,
 }
 
-impl<D> ClipTileCombineVertexArray<D> where D: Device {
+impl<D> ClipTileCombineVertexArrayD3D9<D> where D: Device {
     pub fn new(device: &D,
-               clip_tile_combine_program: &ClipTileCombineProgram<D>,
+               clip_tile_combine_program: &ClipTileCombineProgramD3D9<D>,
                vertex_buffer: &D::Buffer,
                quad_vertex_positions_buffer: &D::Buffer,
                quad_vertex_indices_buffer: &D::Buffer)
-               -> ClipTileCombineVertexArray<D> {
+               -> ClipTileCombineVertexArrayD3D9<D> {
         let vertex_array = device.create_vertex_array();
 
         let tile_offset_attr =
@@ -405,7 +404,7 @@ impl<D> ClipTileCombineVertexArray<D> where D: Device {
         });
         device.bind_buffer(&vertex_array, quad_vertex_indices_buffer, BufferTarget::Index);
 
-        ClipTileCombineVertexArray { vertex_array }
+        ClipTileCombineVertexArrayD3D9 { vertex_array }
     }
 }
 
@@ -426,18 +425,18 @@ impl<D> BlitProgram<D> where D: Device {
     }
 }
 
-pub struct BlitBufferProgram<D> where D: Device {
+pub struct BlitBufferProgramD3D11<D> where D: Device {
     pub program: D::Program,
     pub buffer_storage_buffer: D::StorageBuffer,
     pub buffer_size_uniform: D::Uniform,
 }
 
-impl<D> BlitBufferProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader) -> BlitBufferProgram<D> {
+impl<D> BlitBufferProgramD3D11<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> BlitBufferProgramD3D11<D> {
         let program = device.create_raster_program(resources, "blit_buffer");
         let buffer_storage_buffer = device.get_storage_buffer(&program, "Buffer", 0);
         let buffer_size_uniform = device.get_uniform(&program, "BufferSize");
-        BlitBufferProgram { program, buffer_storage_buffer, buffer_size_uniform }
+        BlitBufferProgramD3D11 { program, buffer_storage_buffer, buffer_size_uniform }
     }
 }
 
@@ -458,37 +457,20 @@ impl<D> ClearProgram<D> where D: Device {
     }
 }
 
-pub enum FillProgram<D> where D: Device {
-    Raster(FillRasterProgram<D>),
-    Compute(FillComputeProgram<D>),
-}
-
-impl<D> FillProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader, renderer_level: RendererLevel)
-               -> FillProgram<D> {
-        match renderer_level {
-            RendererLevel::D3D11 => {
-                FillProgram::Compute(FillComputeProgram::new(device, resources))
-            }
-            RendererLevel::D3D9 => FillProgram::Raster(FillRasterProgram::new(device, resources)),
-        }
-    }
-}
-
-pub struct FillRasterProgram<D> where D: Device {
+pub struct FillProgramD3D9<D> where D: Device {
     pub program: D::Program,
     pub framebuffer_size_uniform: D::Uniform,
     pub tile_size_uniform: D::Uniform,
     pub area_lut_texture: D::TextureParameter,
 }
 
-impl<D> FillRasterProgram<D> where D: Device {
-    fn new(device: &D, resources: &dyn ResourceLoader) -> FillRasterProgram<D> {
+impl<D> FillProgramD3D9<D> where D: Device {
+    fn new(device: &D, resources: &dyn ResourceLoader) -> FillProgramD3D9<D> {
         let program = device.create_raster_program(resources, "fill");
         let framebuffer_size_uniform = device.get_uniform(&program, "FramebufferSize");
         let tile_size_uniform = device.get_uniform(&program, "TileSize");
         let area_lut_texture = device.get_texture_parameter(&program, "AreaLUT");
-        FillRasterProgram {
+        FillProgramD3D9 {
             program,
             framebuffer_size_uniform,
             tile_size_uniform,
@@ -497,7 +479,7 @@ impl<D> FillRasterProgram<D> where D: Device {
     }
 }
 
-pub struct FillComputeProgram<D> where D: Device {
+pub struct FillProgramD3D11<D> where D: Device {
     pub program: D::Program,
     pub dest_image: D::ImageParameter,
     pub area_lut_texture: D::TextureParameter,
@@ -507,8 +489,8 @@ pub struct FillComputeProgram<D> where D: Device {
     pub alpha_tiles_storage_buffer: D::StorageBuffer,
 }
 
-impl<D> FillComputeProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader) -> FillComputeProgram<D> {
+impl<D> FillProgramD3D11<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> FillProgramD3D11<D> {
         let mut program = device.create_compute_program(resources, "fill");
         let local_size = ComputeDimensions { x: TILE_WIDTH, y: TILE_HEIGHT / 4, z: 1 };
         device.set_compute_program_local_size(&mut program, local_size);
@@ -520,7 +502,7 @@ impl<D> FillComputeProgram<D> where D: Device {
         let tiles_storage_buffer = device.get_storage_buffer(&program, "Tiles", 1);
         let alpha_tiles_storage_buffer = device.get_storage_buffer(&program, "AlphaTiles", 2);
 
-        FillComputeProgram {
+        FillProgramD3D11 {
             program,
             dest_image,
             area_lut_texture,
@@ -532,18 +514,13 @@ impl<D> FillComputeProgram<D> where D: Device {
     }
 }
 
-pub enum TileProgram<D> where D: Device {
-    Raster(TileRasterProgram<D>),
-    Compute(TileComputeProgram<D>),
-}
-
-pub struct TileRasterProgram<D> where D: Device {
+pub struct TileProgramD3D9<D> where D: Device {
     pub common: TileProgramCommon<D>,
     pub dest_texture: D::TextureParameter,
     pub transform_uniform: D::Uniform,
 }
 
-pub struct TileComputeProgram<D> where D: Device {
+pub struct TileProgramD3D11<D> where D: Device {
     pub common: TileProgramCommon<D>,
     pub load_action_uniform: D::Uniform,
     pub clear_color_uniform: D::Uniform,
@@ -574,30 +551,18 @@ pub struct TileProgramCommon<D> where D: Device {
     pub ctrl_uniform: D::Uniform,
 }
 
-impl<D> TileProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader, renderer_level: RendererLevel)
-               -> TileProgram<D> {
-        match renderer_level {
-            RendererLevel::D3D11 => {
-                TileProgram::Compute(TileComputeProgram::new(device, resources))
-            }
-            RendererLevel::D3D9 => TileProgram::Raster(TileRasterProgram::new(device, resources)),
-        }
-    }
-}
-
-impl<D> TileRasterProgram<D> where D: Device {
-    fn new(device: &D, resources: &dyn ResourceLoader) -> TileRasterProgram<D> {
+impl<D> TileProgramD3D9<D> where D: Device {
+    fn new(device: &D, resources: &dyn ResourceLoader) -> TileProgramD3D9<D> {
         let program = device.create_raster_program(resources, "tile");
         let dest_texture = device.get_texture_parameter(&program, "DestTexture");
         let transform_uniform = device.get_uniform(&program, "Transform");
         let common = TileProgramCommon::new(device, program);
-        TileRasterProgram { common, dest_texture, transform_uniform }
+        TileProgramD3D9 { common, dest_texture, transform_uniform }
     }
 }
 
-impl<D> TileComputeProgram<D> where D: Device {
-    fn new(device: &D, resources: &dyn ResourceLoader) -> TileComputeProgram<D> {
+impl<D> TileProgramD3D11<D> where D: Device {
+    fn new(device: &D, resources: &dyn ResourceLoader) -> TileProgramD3D11<D> {
         let mut program = device.create_compute_program(resources, "tile");
         device.set_compute_program_local_size(&mut program,
                                               ComputeDimensions { x: 16, y: 4, z: 1 });
@@ -611,7 +576,7 @@ impl<D> TileComputeProgram<D> where D: Device {
         let first_tile_map_storage_buffer = device.get_storage_buffer(&program, "FirstTileMap", 2);
 
         let common = TileProgramCommon::new(device, program);
-        TileComputeProgram {
+        TileProgramD3D11 {
             common,
             load_action_uniform,
             clear_color_uniform,
@@ -690,59 +655,81 @@ impl<D> CopyTileProgram<D> where D: Device {
     }
 }
 
-pub struct ClipTileCombineProgram<D> where D: Device {
+pub struct ClipTileCombineProgramD3D9<D> where D: Device {
     pub program: D::Program,
     pub src_texture: D::TextureParameter,
     pub framebuffer_size_uniform: D::Uniform,
 }
 
-impl<D> ClipTileCombineProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader) -> ClipTileCombineProgram<D> {
+impl<D> ClipTileCombineProgramD3D9<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> ClipTileCombineProgramD3D9<D> {
         let program = device.create_raster_program(resources, "tile_clip_combine");
         let src_texture = device.get_texture_parameter(&program, "Src");
         let framebuffer_size_uniform = device.get_uniform(&program, "FramebufferSize");
-        ClipTileCombineProgram { program, src_texture, framebuffer_size_uniform }
+        ClipTileCombineProgramD3D9 { program, src_texture, framebuffer_size_uniform }
     }
 }
 
-pub struct ClipTileCopyProgram<D> where D: Device {
+pub struct ClipTileCopyProgramD3D9<D> where D: Device {
     pub program: D::Program,
     pub src_texture: D::TextureParameter,
     pub framebuffer_size_uniform: D::Uniform,
 }
 
-impl<D> ClipTileCopyProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader) -> ClipTileCopyProgram<D> {
+impl<D> ClipTileCopyProgramD3D9<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> ClipTileCopyProgramD3D9<D> {
         let program = device.create_raster_program(resources, "tile_clip_copy");
         let src_texture = device.get_texture_parameter(&program, "Src");
         let framebuffer_size_uniform = device.get_uniform(&program, "FramebufferSize");
-        ClipTileCopyProgram { program, src_texture, framebuffer_size_uniform }
+        ClipTileCopyProgramD3D9 { program, src_texture, framebuffer_size_uniform }
+    }
+}
+
+pub struct D3D9Programs<D> where D: Device {
+    pub fill_program: FillProgramD3D9<D>,
+    pub tile_program: TileProgramD3D9<D>,
+    pub tile_clip_combine_program: ClipTileCombineProgramD3D9<D>,
+    pub tile_clip_copy_program: ClipTileCopyProgramD3D9<D>,
+}
+
+impl<D> D3D9Programs<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> D3D9Programs<D> {
+        D3D9Programs {
+            fill_program: FillProgramD3D9::new(device, resources),
+            tile_program: TileProgramD3D9::new(device, resources),
+            tile_clip_combine_program: ClipTileCombineProgramD3D9::new(device, resources),
+            tile_clip_copy_program: ClipTileCopyProgramD3D9::new(device, resources),
+        }
     }
 }
 
 pub struct D3D11Programs<D> where D: Device {
-    pub init_program: InitProgram<D>,
-    pub bin_compute_program: BinComputeProgram<D>,
-    pub dice_compute_program: DiceComputeProgram<D>,
-    pub blit_buffer_program: BlitBufferProgram<D>,
-    pub propagate_program: PropagateProgram<D>,
-    pub sort_program: SortProgram<D>,
+    pub bound_program: BoundProgramD3D11<D>,
+    pub dice_program: DiceProgramD3D11<D>,
+    pub bin_program: BinProgramD3D11<D>,
+    pub propagate_program: PropagateProgramD3D11<D>,
+    pub sort_program: SortProgramD3D11<D>,
+    pub fill_program: FillProgramD3D11<D>,
+    pub tile_program: TileProgramD3D11<D>,
+    pub blit_buffer_program: BlitBufferProgramD3D11<D>,
 }
 
 impl<D> D3D11Programs<D> where D: Device {
     pub fn new(device: &D, resources: &dyn ResourceLoader) -> D3D11Programs<D> {
         D3D11Programs {
-            init_program: InitProgram::new(device, resources),
-            bin_compute_program: BinComputeProgram::new(device, resources),
-            dice_compute_program: DiceComputeProgram::new(device, resources),
-            blit_buffer_program: BlitBufferProgram::new(device, resources),
-            propagate_program: PropagateProgram::new(device, resources),
-            sort_program: SortProgram::new(device, resources),
+            bound_program: BoundProgramD3D11::new(device, resources),
+            dice_program: DiceProgramD3D11::new(device, resources),
+            bin_program: BinProgramD3D11::new(device, resources),
+            propagate_program: PropagateProgramD3D11::new(device, resources),
+            sort_program: SortProgramD3D11::new(device, resources),
+            fill_program: FillProgramD3D11::new(device, resources),
+            tile_program: TileProgramD3D11::new(device, resources),
+            blit_buffer_program: BlitBufferProgramD3D11::new(device, resources),
         }
     }
 }
 
-pub struct PropagateProgram<D> where D: Device {
+pub struct PropagateProgramD3D11<D> where D: Device {
     pub program: D::Program,
     pub framebuffer_tile_size_uniform: D::Uniform,
     pub column_count_uniform: D::Uniform,
@@ -758,8 +745,8 @@ pub struct PropagateProgram<D> where D: Device {
     pub alpha_tiles_storage_buffer: D::StorageBuffer,
 }
 
-impl<D> PropagateProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader) -> PropagateProgram<D> {
+impl<D> PropagateProgramD3D11<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> PropagateProgramD3D11<D> {
         let mut program = device.create_compute_program(resources, "propagate");
         let local_size = ComputeDimensions { x: PROPAGATE_WORKGROUP_SIZE, y: 1, z: 1 };
         device.set_compute_program_local_size(&mut program, local_size);
@@ -778,7 +765,7 @@ impl<D> PropagateProgram<D> where D: Device {
             device.get_storage_buffer(&program, "IndirectDrawParams", 7);
         let alpha_tiles_storage_buffer = device.get_storage_buffer(&program, "AlphaTiles", 8);
 
-        PropagateProgram {
+        PropagateProgramD3D11 {
             program,
             framebuffer_tile_size_uniform,
             column_count_uniform,
@@ -885,7 +872,7 @@ impl<D> ReprojectionVertexArray<D> where D: Device {
     }
 }
 
-pub struct BinComputeProgram<D> where D: Device {
+pub struct BinProgramD3D11<D> where D: Device {
     pub program: D::Program,
     pub microline_count_uniform: D::Uniform,
     pub max_fill_count_uniform: D::Uniform,
@@ -897,10 +884,10 @@ pub struct BinComputeProgram<D> where D: Device {
     pub backdrops_storage_buffer: D::StorageBuffer,
 }
 
-impl<D> BinComputeProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader) -> BinComputeProgram<D> {
+impl<D> BinProgramD3D11<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> BinProgramD3D11<D> {
         let mut program = device.create_compute_program(resources, "bin");
-        let dimensions = ComputeDimensions { x: 64, y: 1, z: 1 };
+        let dimensions = ComputeDimensions { x: BIN_WORKGROUP_SIZE, y: 1, z: 1 };
         device.set_compute_program_local_size(&mut program, dimensions);
 
         let microline_count_uniform = device.get_uniform(&program, "MicrolineCount");
@@ -914,7 +901,7 @@ impl<D> BinComputeProgram<D> where D: Device {
         let tiles_storage_buffer = device.get_storage_buffer(&program, "Tiles", 4);
         let backdrops_storage_buffer = device.get_storage_buffer(&program, "Backdrops", 5);
 
-        BinComputeProgram {
+        BinProgramD3D11 {
             program,
             microline_count_uniform,
             max_fill_count_uniform,
@@ -928,7 +915,7 @@ impl<D> BinComputeProgram<D> where D: Device {
     }
 }
 
-pub struct DiceComputeProgram<D> where D: Device {
+pub struct DiceProgramD3D11<D> where D: Device {
     pub program: D::Program,
     pub transform_uniform: D::Uniform,
     pub translation_uniform: D::Uniform,
@@ -942,10 +929,10 @@ pub struct DiceComputeProgram<D> where D: Device {
     pub microlines_storage_buffer: D::StorageBuffer,
 }
 
-impl<D> DiceComputeProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader) -> DiceComputeProgram<D> {
+impl<D> DiceProgramD3D11<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> DiceProgramD3D11<D> {
         let mut program = device.create_compute_program(resources, "dice");
-        let dimensions = ComputeDimensions { x: 64, y: 1, z: 1 };
+        let dimensions = ComputeDimensions { x: DICE_WORKGROUP_SIZE, y: 1, z: 1 };
         device.set_compute_program_local_size(&mut program, dimensions);
 
         let transform_uniform = device.get_uniform(&program, "Transform");
@@ -962,7 +949,7 @@ impl<D> DiceComputeProgram<D> where D: Device {
         let input_indices_storage_buffer = device.get_storage_buffer(&program, "InputIndices", 3);
         let microlines_storage_buffer = device.get_storage_buffer(&program, "Microlines", 4);
 
-        DiceComputeProgram {
+        DiceProgramD3D11 {
             program,
             transform_uniform,
             translation_uniform,
@@ -978,7 +965,7 @@ impl<D> DiceComputeProgram<D> where D: Device {
     }
 }
 
-pub struct InitProgram<D> where D: Device {
+pub struct BoundProgramD3D11<D> where D: Device {
     pub program: D::Program,
     pub path_count_uniform: D::Uniform,
     pub tile_count_uniform: D::Uniform,
@@ -986,10 +973,10 @@ pub struct InitProgram<D> where D: Device {
     pub tiles_storage_buffer: D::StorageBuffer,
 }
 
-impl<D> InitProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader) -> InitProgram<D> {
-        let mut program = device.create_compute_program(resources, "init");
-        let dimensions = ComputeDimensions { x: 64, y: 1, z: 1 };
+impl<D> BoundProgramD3D11<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> BoundProgramD3D11<D> {
+        let mut program = device.create_compute_program(resources, "bound");
+        let dimensions = ComputeDimensions { x: BOUND_WORKGROUP_SIZE, y: 1, z: 1 };
         device.set_compute_program_local_size(&mut program, dimensions);
 
         let path_count_uniform = device.get_uniform(&program, "PathCount");
@@ -998,7 +985,7 @@ impl<D> InitProgram<D> where D: Device {
         let tile_path_info_storage_buffer = device.get_storage_buffer(&program, "TilePathInfo", 0);
         let tiles_storage_buffer = device.get_storage_buffer(&program, "Tiles", 1);
 
-        InitProgram {
+        BoundProgramD3D11 {
             program,
             path_count_uniform,
             tile_count_uniform,
@@ -1008,15 +995,15 @@ impl<D> InitProgram<D> where D: Device {
     }
 }
 
-pub struct SortProgram<D> where D: Device {
+pub struct SortProgramD3D11<D> where D: Device {
     pub program: D::Program,
     pub tile_count_uniform: D::Uniform,
     pub tiles_storage_buffer: D::StorageBuffer,
     pub first_tile_map_storage_buffer: D::StorageBuffer,
 }
 
-impl<D> SortProgram<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader) -> SortProgram<D> {
+impl<D> SortProgramD3D11<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> SortProgramD3D11<D> {
         let mut program = device.create_compute_program(resources, "sort");
         let dimensions = ComputeDimensions { x: SORT_WORKGROUP_SIZE, y: 1, z: 1 };
         device.set_compute_program_local_size(&mut program, dimensions);
@@ -1025,7 +1012,7 @@ impl<D> SortProgram<D> where D: Device {
         let tiles_storage_buffer = device.get_storage_buffer(&program, "Tiles", 0);
         let first_tile_map_storage_buffer = device.get_storage_buffer(&program, "FirstTileMap", 1);
 
-        SortProgram {
+        SortProgramD3D11 {
             program,
             tile_count_uniform,
             tiles_storage_buffer,
