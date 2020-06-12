@@ -579,7 +579,6 @@ pub struct TileProgramD3D11<D> where D: Device {
     pub framebuffer_tile_size_uniform: D::Uniform,
     pub dest_image: D::ImageParameter,
     pub tiles_storage_buffer: D::StorageBuffer,
-    pub tile_link_map_storage_buffer: D::StorageBuffer,
     pub first_tile_map_storage_buffer: D::StorageBuffer,
 }
 
@@ -624,8 +623,7 @@ impl<D> TileProgramD3D11<D> where D: Device {
         let framebuffer_tile_size_uniform = device.get_uniform(&program, "FramebufferTileSize");
         let dest_image = device.get_image_parameter(&program, "DestImage");
         let tiles_storage_buffer = device.get_storage_buffer(&program, "Tiles", 0);
-        let tile_link_map_storage_buffer = device.get_storage_buffer(&program, "TileLinkMap", 1);
-        let first_tile_map_storage_buffer = device.get_storage_buffer(&program, "FirstTileMap", 2);
+        let first_tile_map_storage_buffer = device.get_storage_buffer(&program, "FirstTileMap", 1);
 
         let common = TileProgramCommon::new(device, program);
         TileProgramD3D11 {
@@ -635,7 +633,6 @@ impl<D> TileProgramD3D11<D> where D: Device {
             framebuffer_tile_size_uniform,
             dest_image,
             tiles_storage_buffer,
-            tile_link_map_storage_buffer,
             first_tile_map_storage_buffer,
         }
     }
