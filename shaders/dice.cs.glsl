@@ -169,14 +169,6 @@ void main() {
         toPointIndex += 1;
 
     vec4 baseline = vec4(getPoint(fromPointIndex), getPoint(toPointIndex));
-    if ((flagsPathIndex & (FLAGS_PATH_INDEX_CURVE_IS_CUBIC |
-                           FLAGS_PATH_INDEX_CURVE_IS_QUADRATIC)) == 0) {
-        // FIXME(pcwalton): Dice these!
-        uint outputMicrolineIndex =
-            atomicAdd(iComputeIndirectParams[BIN_INDIRECT_DRAW_PARAMS_MICROLINE_COUNT_INDEX], 1);
-        emitMicroline(baseline, batchPathIndex, outputMicrolineIndex);
-        return;
-    }
 
     // Read control points if applicable, and calculate number of segments.
     //

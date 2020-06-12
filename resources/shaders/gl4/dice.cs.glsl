@@ -171,14 +171,9 @@ void main(){
         toPointIndex += 1;
 
     vec4 baseline = vec4(getPoint(fromPointIndex), getPoint(toPointIndex));
-    if((flagsPathIndex &(0x40000000u |
-                                                             0x80000000u))== 0){
 
-        uint outputMicrolineIndex =
-            atomicAdd(iComputeIndirectParams[3], 1);
-        emitMicroline(baseline, batchPathIndex, outputMicrolineIndex);
-        return;
-    }
+
+
 
 
     vec4 ctrl = vec4(0.0);
