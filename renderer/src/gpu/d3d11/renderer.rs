@@ -11,8 +11,12 @@
 use crate::gpu::mem::{BufferID, BufferTag, GPUMemoryAllocator};
 use crate::gpu::perf::TimerFuture;
 use crate::gpu::renderer::{FramebufferFlags, RendererCore};
-use crate::gpu::shaders::{BOUND_WORKGROUP_SIZE, DICE_WORKGROUP_SIZE, PROPAGATE_WORKGROUP_SIZE, ProgramsD3D11, SORT_WORKGROUP_SIZE, VertexArraysD3D11};
-use crate::gpu_data::{AlphaTileD3D11, BackdropInfoD3D11, DiceMetadataD3D11, DrawTileBatchD3D11, Fill, FirstTileD3D11, MicrolineD3D11, PathSource, PropagateMetadataD3D11, SegmentIndicesD3D11, SegmentsD3D11, TileD3D11, TileBatchDataD3D11, TileBatchTexture, TilePathInfoD3D11};
+use crate::gpu::shaders::{BOUND_WORKGROUP_SIZE, DICE_WORKGROUP_SIZE, PROPAGATE_WORKGROUP_SIZE};
+use crate::gpu::shaders::{ProgramsD3D11, SORT_WORKGROUP_SIZE, VertexArraysD3D11};
+use crate::gpu_data::{AlphaTileD3D11, BackdropInfoD3D11, DiceMetadataD3D11, DrawTileBatchD3D11};
+use crate::gpu_data::{Fill, FirstTileD3D11, MicrolineD3D11, PathSource, PropagateMetadataD3D11};
+use crate::gpu_data::{SegmentIndicesD3D11, SegmentsD3D11, TileD3D11, TileBatchDataD3D11};
+use crate::gpu_data::{TileBatchTexture, TilePathInfoD3D11};
 use byte_slice_cast::AsSliceOf;
 use pathfinder_content::effects::{BlendMode, Filter};
 use pathfinder_geometry::transform2d::Transform2F;
