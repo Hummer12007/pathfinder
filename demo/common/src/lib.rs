@@ -165,8 +165,8 @@ impl<W> DemoApp<W> where W: Window {
 
         let scene_proxy = SceneProxy::from_scene(built_svg.scene, level, executor);
 
-        let ground_program = GroundProgram::new(&renderer.device, resources);
-        let ground_vertex_array = GroundVertexArray::new(&renderer.device,
+        let ground_program = GroundProgram::new(renderer.device(), resources);
+        let ground_vertex_array = GroundVertexArray::new(renderer.device(),
                                                          &ground_program,
                                                          &renderer.quad_vertex_positions_buffer(),
                                                          &renderer.quad_vertex_indices_buffer());
@@ -179,7 +179,7 @@ impl<W> DemoApp<W> where W: Window {
             message,
         );
 
-        let ui_presenter = DemoUIPresenter::new(&renderer.device, resources);
+        let ui_presenter = DemoUIPresenter::new(renderer.device(), resources);
 
         DemoApp {
             window,
@@ -480,28 +480,27 @@ impl<W> DemoApp<W> where W: Window {
         let frame = self.current_frame.take().unwrap();
         for ui_event in &frame.ui_events {
             self.dirty = true;
-            self.renderer.debug_ui_presenter.ui_presenter.event_queue.push(*ui_event);
+            self.renderer.debug_ui_presenter_mut().1.ui_presenter.event_queue.push(*ui_event);
         }
 
-        self.renderer.debug_ui_presenter.ui_presenter.mouse_position =
+        self.renderer.debug_ui_presenter_mut().1.ui_presenter.mouse_position =
             self.last_mouse_position.to_f32() * self.window_size.backing_scale_factor;
 
         let mut ui_action = UIAction::None;
         if self.options.ui == UIVisibility::All {
-            self.ui_presenter.update(
-                &self.renderer.device,
-                &mut self.window,
-                &mut self.renderer.debug_ui_presenter,
-                &mut ui_action,
-                &mut self.ui_model,
-            );
+            let (device, debug_ui_presenter) = self.renderer.debug_ui_presenter_mut();
+            self.ui_presenter.update(device,
+                                     &mut self.window,
+                                     debug_ui_presenter,
+                                     &mut ui_action,
+                                     &mut self.ui_model);
         }
 
         self.handle_ui_events(frame, &mut ui_action);
 
-        self.renderer.device.end_commands();
+        self.renderer.device().end_commands();
 
-        self.window.present(&mut self.renderer.device);
+        self.window.present(self.renderer.device_mut());
         self.frame_counter += 1;
     }
 
@@ -521,7 +520,8 @@ impl<W> DemoApp<W> where W: Window {
             let total_rendering_time = frame.scene_rendering_times
                                             .iter()
                                             .fold(RenderTime::default(), |sum, item| sum + *item);
-            self.renderer.debug_ui_presenter.add_sample(aggregate_stats, total_rendering_time);
+            self.renderer.debug_ui_presenter_mut().1.add_sample(aggregate_stats,
+                                                                total_rendering_time);
         }
     }
 
@@ -540,7 +540,12 @@ impl<W> DemoApp<W> where W: Window {
     }
 
     fn handle_ui_events(&mut self, mut frame: Frame, ui_action: &mut UIAction) {
-        frame.ui_events = self.renderer.debug_ui_presenter.ui_presenter.event_queue.drain();
+        frame.ui_events = self.renderer
+                              .debug_ui_presenter_mut()
+                              .1
+                              .ui_presenter
+                              .event_queue
+                              .drain();
 
         self.handle_ui_action(ui_action);
 

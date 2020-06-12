@@ -1,6 +1,6 @@
-// pathfinder/renderer/src/gpu/mod.rs
+// pathfinder/renderer/src/gpu/d3d11/mod.rs
 //
-// Copyright © 2019 The Pathfinder Project Developers.
+// Copyright © 2020 The Pathfinder Project Developers.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -8,13 +8,4 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! The GPU renderer for Pathfinder 3.
-
-pub mod d3d11;
-pub mod debug;
-pub mod options;
-pub mod perf;
 pub mod renderer;
-
-pub(crate) mod mem;
-pub(crate) mod shaders;

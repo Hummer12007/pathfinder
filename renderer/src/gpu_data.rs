@@ -165,12 +165,12 @@ pub struct PrepareTilesInfoD3D11 {
 #[derive(Clone, Debug)]
 pub struct SegmentsD3D11 {
     pub points: Vec<Vector2F>,
-    pub indices: Vec<SegmentIndices>,
+    pub indices: Vec<SegmentIndicesD3D11>,
 }
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
-pub struct SegmentIndices {
+pub struct SegmentIndicesD3D11 {
     pub first_point_index: u32,
     pub flags: u32,
 }

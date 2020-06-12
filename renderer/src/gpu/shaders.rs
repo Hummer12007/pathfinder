@@ -8,11 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use crate::gpu::options::RendererLevel;
 use crate::tiles::{TILE_HEIGHT, TILE_WIDTH};
 use pathfinder_gpu::{BufferTarget, BufferUploadMode, ComputeDimensions, Device, VertexAttrClass};
 use pathfinder_gpu::{VertexAttrDescriptor, VertexAttrType};
 use pathfinder_resources::ResourceLoader;
+use std::marker::PhantomData;
 
 // TODO(pcwalton): Replace with `mem::size_of` calls?
 pub(crate) const TILE_INSTANCE_SIZE: usize = 16;
@@ -53,6 +53,46 @@ impl<D> BlitVertexArray<D> where D: Device {
         device.bind_buffer(&vertex_array, quad_vertex_indices_buffer, BufferTarget::Index);
 
         BlitVertexArray { vertex_array }
+    }
+}
+
+pub struct VertexArraysCore<D> where D: Device {
+    pub blit_vertex_array: BlitVertexArray<D>,
+}
+
+impl<D> VertexArraysCore<D> where D: Device {
+    pub fn new(device: &D,
+               programs: &ProgramsCore<D>,
+               quad_vertex_positions_buffer: &D::Buffer,
+               quad_vertex_indices_buffer: &D::Buffer)
+               -> VertexArraysCore<D> {
+        VertexArraysCore {
+            blit_vertex_array: BlitVertexArray::new(device,
+                                                    &programs.blit_program,
+                                                    quad_vertex_positions_buffer,
+                                                    quad_vertex_indices_buffer),
+        }
+    }
+}
+
+pub struct VertexArraysD3D11<D> where D: Device {
+    // TODO(pcwalton): Remove.
+    blit_buffer_vertex_array: BlitBufferVertexArrayD3D11<D>,
+}
+
+impl<D> VertexArraysD3D11<D> where D: Device {
+    pub fn new(device: &D,
+               programs: &ProgramsD3D11<D>,
+               quad_vertex_positions_buffer: &D::Buffer,
+               quad_vertex_indices_buffer: &D::Buffer)
+               -> VertexArraysD3D11<D> {
+        VertexArraysD3D11 {
+            blit_buffer_vertex_array:
+                BlitBufferVertexArrayD3D11::new(device,
+                                                &programs.blit_buffer_program,
+                                                quad_vertex_positions_buffer,
+                                                quad_vertex_indices_buffer),
+        }
     }
 }
 
@@ -425,6 +465,18 @@ impl<D> BlitProgram<D> where D: Device {
     }
 }
 
+pub struct ProgramsCore<D> where D: Device {
+    pub blit_program: BlitProgram<D>,
+}
+
+impl<D> ProgramsCore<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> ProgramsCore<D> {
+        ProgramsCore {
+            blit_program: BlitProgram::new(device, resources),
+        }
+    }
+}
+
 pub struct BlitBufferProgramD3D11<D> where D: Device {
     pub program: D::Program,
     pub buffer_storage_buffer: D::StorageBuffer,
@@ -703,7 +755,17 @@ impl<D> D3D9Programs<D> where D: Device {
     }
 }
 
-pub struct D3D11Programs<D> where D: Device {
+pub struct ProgramsD3D9<D> where D: Device {
+    unused: PhantomData<D>,
+}
+
+impl<D> ProgramsD3D9<D> where D: Device {
+    pub fn new(_: &D, _: &dyn ResourceLoader) -> ProgramsD3D9<D> {
+        ProgramsD3D9 { unused: PhantomData }
+    }
+}
+
+pub struct ProgramsD3D11<D> where D: Device {
     pub bound_program: BoundProgramD3D11<D>,
     pub dice_program: DiceProgramD3D11<D>,
     pub bin_program: BinProgramD3D11<D>,
@@ -714,9 +776,9 @@ pub struct D3D11Programs<D> where D: Device {
     pub blit_buffer_program: BlitBufferProgramD3D11<D>,
 }
 
-impl<D> D3D11Programs<D> where D: Device {
-    pub fn new(device: &D, resources: &dyn ResourceLoader) -> D3D11Programs<D> {
-        D3D11Programs {
+impl<D> ProgramsD3D11<D> where D: Device {
+    pub fn new(device: &D, resources: &dyn ResourceLoader) -> ProgramsD3D11<D> {
+        ProgramsD3D11 {
             bound_program: BoundProgramD3D11::new(device, resources),
             dice_program: DiceProgramD3D11::new(device, resources),
             bin_program: BinProgramD3D11::new(device, resources),

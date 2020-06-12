@@ -14,10 +14,10 @@ use crate::concurrent::executor::Executor;
 use crate::gpu::options::RendererLevel;
 use crate::gpu::renderer::BlendModeExt;
 use crate::gpu_data::{AlphaTileId, BackdropInfoD3D11, Clip, ClippedPathInfo, DiceMetadataD3D11};
-use crate::gpu_data::{DrawTileBatchD3D11, Fill, PathBatchIndex, PathSource};
-use crate::gpu_data::{PrepareTilesInfoD3D11, PropagateMetadataD3D11};
-use crate::gpu_data::{RenderCommand, SegmentIndices, SegmentsD3D11, TileBatchDataD3D11, TileBatchId};
-use crate::gpu_data::{TileBatchTexture, TileObjectPrimitive, TilePathInfoD3D11};
+use crate::gpu_data::{DrawTileBatchD3D11, Fill, PathBatchIndex, PathSource, PrepareTilesInfoD3D11};
+use crate::gpu_data::{PropagateMetadataD3D11, RenderCommand, SegmentIndicesD3D11, SegmentsD3D11};
+use crate::gpu_data::{TileBatchDataD3D11, TileBatchId, TileBatchTexture};
+use crate::gpu_data::{TileObjectPrimitive, TilePathInfoD3D11};
 use crate::options::{PrepareMode, PreparedBuildOptions, PreparedRenderTransform};
 use crate::paint::{PaintId, PaintInfo, PaintMetadata};
 use crate::scene::{ClipPathId, DisplayItem, DrawPath, DrawPathId, LastSceneInfo, PathId};
@@ -33,7 +33,7 @@ use pathfinder_content::outline::{Outline, PointFlags};
 use pathfinder_geometry::line_segment::{LineSegment2F, LineSegmentU16};
 use pathfinder_geometry::rect::{RectF, RectI};
 use pathfinder_geometry::transform2d::Transform2F;
-use pathfinder_geometry::vector::{Vector2I, vec2i};
+use pathfinder_geometry::vector::Vector2I;
 use pathfinder_gpu::TextureSamplingFlags;
 use pathfinder_simd::default::F32x4;
 use std::borrow::Cow;
@@ -855,7 +855,7 @@ impl SegmentsD3D11 {
                         }
                     }
 
-                    self.indices.push(SegmentIndices {
+                    self.indices.push(SegmentIndicesD3D11 {
                         first_point_index: self.points.len() as u32,
                         flags,
                     });

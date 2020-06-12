@@ -53,19 +53,18 @@ impl<W> DemoApp<W> where W: Window {
             Mode::VR => {
                 let viewport = self.window.viewport(View::Stereo(0));
                 if self.scene_framebuffer.is_none()
-                    || self.renderer.device.texture_size(
-                        &self
-                            .renderer
-                            .device
-                            .framebuffer_texture(self.scene_framebuffer.as_ref().unwrap()),
+                    || self.renderer.device().texture_size(
+                        &self.renderer.device().framebuffer_texture(self.scene_framebuffer
+                                                                        .as_ref()
+                                                                        .unwrap()),
                     ) != viewport.size()
                 {
                     let scene_texture = self
                         .renderer
-                        .device
+                        .device()
                         .create_texture(TextureFormat::RGBA8, viewport.size());
                     self.scene_framebuffer =
-                        Some(self.renderer.device.create_framebuffer(scene_texture));
+                        Some(self.renderer.device().create_framebuffer(scene_texture));
                 }
                 self.renderer
                     .replace_dest_framebuffer(DestFramebuffer::Other(
@@ -98,7 +97,7 @@ impl<W> DemoApp<W> where W: Window {
     }
 
     pub fn draw_scene(&mut self) {
-        self.renderer.device.begin_commands();
+        self.renderer.device().begin_commands();
 
         let view = self.ui_model.mode.view(0);
         self.window.make_current(view);
@@ -107,7 +106,7 @@ impl<W> DemoApp<W> where W: Window {
             self.draw_environment(0);
         }
 
-        self.renderer.device.end_commands();
+        self.renderer.device().end_commands();
 
         self.render_vector_scene();
 
@@ -126,7 +125,7 @@ impl<W> DemoApp<W> where W: Window {
     }
 
     pub fn begin_compositing(&mut self) {
-        self.renderer.device.begin_commands();
+        self.renderer.device().begin_commands();
     }
 
     pub fn composite_scene(&mut self, render_scene_index: u32) {
@@ -161,7 +160,7 @@ impl<W> DemoApp<W> where W: Window {
         self.draw_environment(render_scene_index);
 
         let scene_framebuffer = self.scene_framebuffer.as_ref().unwrap();
-        let scene_texture = self.renderer.device.framebuffer_texture(scene_framebuffer);
+        let scene_texture = self.renderer.device().framebuffer_texture(scene_framebuffer);
 
         let mut quad_scale = self.scene_metadata.view_box.size().to_4d();
         quad_scale.set_z(1.0);
@@ -226,7 +225,7 @@ impl<W> DemoApp<W> where W: Window {
             None
         };
 
-        self.renderer.device.draw_elements(6, &RenderState {
+        self.renderer.device().draw_elements(6, &RenderState {
             target: &self.renderer.draw_render_target(),
             program: &self.ground_program.program,
             vertex_array: &self.ground_vertex_array.vertex_array,
@@ -266,15 +265,15 @@ impl<W> DemoApp<W> where W: Window {
             .as_mut()
             .unwrap()
             .scene_stats
-            .push(self.renderer.stats);
+            .push(*self.renderer.render_stats());
     }
 
     pub fn take_raster_screenshot(&mut self, path: PathBuf) {
         let drawable_size = self.window_size.device_size();
         let viewport = RectI::new(Vector2I::default(), drawable_size);
         let texture_data_receiver =
-            self.renderer.device.read_pixels(&RenderTarget::Default, viewport);
-        let pixels = match self.renderer.device.recv_texture_data(&texture_data_receiver) {
+            self.renderer.device().read_pixels(&RenderTarget::Default, viewport);
+        let pixels = match self.renderer.device().recv_texture_data(&texture_data_receiver) {
             TextureData::U8(pixels) => pixels,
             _ => panic!("Unexpected pixel format for default framebuffer!"),
         };

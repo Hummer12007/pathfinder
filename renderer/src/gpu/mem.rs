@@ -11,15 +11,11 @@
 //! GPU memory management.
 
 use crate::gpu::options::RendererLevel;
-use crate::gpu::shaders::{CopyTileProgram, CopyTileVertexArray};
-use crate::gpu_data::{AlphaTileD3D11, Clip, Fill};
-use crate::gpu_data::{TileD3D11, TileObjectPrimitive};
 use crate::tiles::{TILE_HEIGHT, TILE_WIDTH};
 use fxhash::FxHashMap;
 use pathfinder_geometry::vector::{Vector2I, vec2i};
 use pathfinder_gpu::{BufferData, BufferTarget, BufferUploadMode, Device};
 use pathfinder_gpu::{TextureFormat, TextureSamplingFlags};
-use std::marker::PhantomData;
 use std::mem;
 use std::default::Default;
 
