@@ -196,7 +196,7 @@ void main(){
     }
 
 
-    int segmentCount = int(ceil(segmentCountF));
+    int segmentCount = max(int(ceil(segmentCountF)), 1);
     uint firstOutputMicrolineIndex =
         atomicAdd(iComputeIndirectParams[3],
                   segmentCount);

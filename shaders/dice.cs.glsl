@@ -194,7 +194,7 @@ void main() {
     }
 
     // Allocate space.
-    int segmentCount = int(ceil(segmentCountF));
+    int segmentCount = max(int(ceil(segmentCountF)), 1);
     uint firstOutputMicrolineIndex =
         atomicAdd(iComputeIndirectParams[BIN_INDIRECT_DRAW_PARAMS_MICROLINE_COUNT_INDEX],
                   segmentCount);

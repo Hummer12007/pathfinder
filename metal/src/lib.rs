@@ -28,8 +28,8 @@ use foreign_types::{ForeignType, ForeignTypeRef};
 use half::f16;
 use io_surface::IOSurfaceRef;
 use libc::size_t;
-use metal::{self, Argument, ArgumentEncoder, Buffer, CommandBuffer, CommandBufferRef};
-use metal::{CommandQueue, CompileOptions, ComputeCommandEncoderRef, ComputePipelineDescriptor};
+use metal::{self, Argument, ArgumentEncoder, BlitCommandEncoder, Buffer, CommandBuffer};
+use metal::{CommandQueue, CompileOptions, ComputeCommandEncoder, ComputePipelineDescriptor};
 use metal::{ComputePipelineState, CoreAnimationDrawable, CoreAnimationDrawableRef};
 use metal::{CoreAnimationLayer, CoreAnimationLayerRef, DepthStencilDescriptor, Function, Library};
 use metal::{MTLArgument, MTLArgumentEncoder, MTLArgumentType, MTLBlendFactor, MTLBlendOperation};
@@ -75,6 +75,7 @@ pub struct MetalDevice {
     command_queue: CommandQueue,
     command_buffers: RefCell<Vec<CommandBuffer>>,
     samplers: Vec<SamplerState>,
+    #[allow(dead_code)]
     dispatch_queue: Queue,
     shared_event: SharedEvent,
     shared_event_listener: SharedEventListener,
@@ -732,7 +733,7 @@ impl Device for MetalDevice {
     }
 
     fn begin_commands(&self) {
-        self.command_buffers.borrow_mut().push(self.command_queue.new_command_buffer().retain());
+        self.command_buffers.borrow_mut().push(self.command_queue.new_command_buffer_retained())
     }
 
     fn end_commands(&self) {
@@ -792,7 +793,7 @@ impl Device for MetalDevice {
         let command_buffers = self.command_buffers.borrow();
         let command_buffer = command_buffers.last().unwrap();
 
-        let encoder = command_buffer.new_compute_command_encoder();
+        let encoder = command_buffer.real_new_compute_command_encoder();
 
         let program = match compute_state.program {
             MetalProgram::Compute(ref compute_program) => compute_program,
@@ -804,7 +805,7 @@ impl Device for MetalDevice {
 
         let compute_pipeline_state = unsafe {
             if program.shader.arguments.borrow().is_none() {
-            // FIXME(pcwalton): Factor these raw Objective-C method calls out into a trait.
+                // FIXME(pcwalton): Factor these raw Objective-C method calls out into a trait.
                 let mut reflection: *mut Object = ptr::null_mut();
                 let reflection_options = MTLPipelineOption::ArgumentInfo |
                     MTLPipelineOption::BufferTypeInfo;
@@ -845,8 +846,6 @@ impl Device for MetalDevice {
     }
 
     fn create_timer_query(&self) -> MetalTimerQuery {
-        //println!("create_timer_query()");
-
         let query = MetalTimerQuery(Arc::new(MetalTimerQueryInfo {
             mutex: Mutex::new(MetalTimerQueryData {
                 start_time: None,
@@ -860,8 +859,7 @@ impl Device for MetalDevice {
 
         let captured_query = Arc::downgrade(&query.0);
         query.0.mutex.lock().unwrap().start_block = Some(ConcreteBlock::new(move |_: *mut Object,
-                                                                                  value: u64| {
-            //println!("start block: {}", value);
+                                                                                  _: u64| {
             let start_time = Instant::now();
             let query = captured_query.upgrade().unwrap();
             let mut guard = query.mutex.lock().unwrap();
@@ -869,8 +867,7 @@ impl Device for MetalDevice {
         }).copy());
         let captured_query = Arc::downgrade(&query.0);
         query.0.mutex.lock().unwrap().end_block = Some(ConcreteBlock::new(move |_: *mut Object,
-                                                                                value: u64| {
-            //println!("end block: {}", value);
+                                                                                _: u64| {
             let end_time = Instant::now();
             let query = captured_query.upgrade().unwrap();
             let mut guard = query.mutex.lock().unwrap();
@@ -1198,7 +1195,7 @@ impl MetalDevice {
                 continue;
             }
             if blit_command_encoder.is_none() {
-                blit_command_encoder = Some(command_buffer.new_blit_command_encoder());
+                blit_command_encoder = Some(command_buffer.real_new_blit_command_encoder());
             }
             let blit_command_encoder =
                 blit_command_encoder.as_ref().expect("Where's the blit command encoder?");
@@ -1211,7 +1208,7 @@ impl MetalDevice {
 
         let render_pass_descriptor = self.create_render_pass_descriptor(render_state);
 
-        let encoder = command_buffer.new_render_command_encoder(&render_pass_descriptor).retain();
+        let encoder = command_buffer.new_render_command_encoder_retained(&render_pass_descriptor);
 
         // Wait on the previous compute command, if any.
         let compute_fence = self.compute_fence.borrow();
@@ -1285,6 +1282,7 @@ impl MetalDevice {
         self.set_raster_uniforms(&encoder, render_state);
         encoder.set_render_pipeline_state(&render_pipeline_state);
         self.set_depth_stencil_state(&encoder, render_state);
+
         encoder
     }
 
@@ -1398,7 +1396,7 @@ impl MetalDevice {
     }
 
     fn set_compute_uniforms(&self,
-                            compute_command_encoder: &ComputeCommandEncoderRef,
+                            compute_command_encoder: &ComputeCommandEncoder,
                             compute_state: &ComputeState<MetalDevice>) {
         // Set uniforms.
         let uniform_buffer = self.create_uniform_buffer(&compute_state.uniforms);
@@ -1562,7 +1560,7 @@ impl MetalDevice {
                            argument_index: MetalUniformIndex,
                            buffer: &[u8],
                            buffer_range: &Range<usize>,
-                           compute_command_encoder: &ComputeCommandEncoderRef) {
+                           compute_command_encoder: &ComputeCommandEncoder) {
         compute_command_encoder.set_bytes(
             argument_index.0,
             (buffer_range.end - buffer_range.start) as u64,
@@ -1589,7 +1587,7 @@ impl MetalDevice {
 
     fn encode_compute_texture_parameter(&self,
                                         argument_index: MetalTextureIndex,
-                                        compute_command_encoder: &ComputeCommandEncoderRef,
+                                        compute_command_encoder: &ComputeCommandEncoder,
                                         texture: &MetalTexture) {
         compute_command_encoder.set_texture(argument_index.main, Some(&texture.texture));
         let sampler = &self.samplers[texture.sampling_flags.get().bits() as usize];
@@ -1632,7 +1630,7 @@ impl MetalDevice {
 
     fn create_render_pass_descriptor(&self, render_state: &RenderState<MetalDevice>)
                                      -> RenderPassDescriptor {
-        let render_pass_descriptor = RenderPassDescriptor::new().retain();
+        let render_pass_descriptor = RenderPassDescriptor::new_retained();
         let color_attachment = render_pass_descriptor.color_attachments().object_at(0).unwrap();
         color_attachment.set_texture(Some(&self.render_target_color_texture(render_state.target)));
 
@@ -1742,7 +1740,7 @@ impl MetalDevice {
         {
             let command_buffers = self.command_buffers.borrow();
             let command_buffer = command_buffers.last().unwrap();
-            let encoder = command_buffer.new_blit_command_encoder();
+            let encoder = command_buffer.real_new_blit_command_encoder();
             encoder.synchronize_resource(&texture);
             command_buffer.add_completed_handler(block);
             encoder.end_encoding();
@@ -1756,7 +1754,7 @@ impl MetalDevice {
         {
             let command_buffers = self.command_buffers.borrow();
             let command_buffer = command_buffers.last().unwrap();
-            let encoder = command_buffer.new_blit_command_encoder();
+            let encoder = command_buffer.real_new_blit_command_encoder();
             encoder.synchronize_resource(buffer);
             command_buffer.add_completed_handler(block);
             encoder.end_encoding();
@@ -2256,6 +2254,13 @@ impl CoreAnimationLayerExt for CoreAnimationLayer {
 trait CommandBufferExt {
     fn encode_signal_event(&self, event: &SharedEvent, value: u64);
     fn add_completed_handler(&self, block: RcBlock<(*mut Object,), ()>);
+    // Just like `new_render_command_encoder`, but returns an owned version.
+    fn new_render_command_encoder_retained(&self, render_pass_descriptor: &RenderPassDescriptorRef)
+                                           -> RenderCommandEncoder;
+    // Just like `new_blit_command_encoder`, but doesn't leak.
+    fn real_new_blit_command_encoder(&self) -> BlitCommandEncoder;
+    // Just like `new_compute_command_encoder`, but doesn't leak.
+    fn real_new_compute_command_encoder(&self) -> ComputeCommandEncoder;
 }
 
 impl CommandBufferExt for CommandBuffer {
@@ -2268,6 +2273,40 @@ impl CommandBufferExt for CommandBuffer {
     fn add_completed_handler(&self, block: RcBlock<(*mut Object,), ()>) {
         unsafe {
             msg_send![self.as_ptr(), addCompletedHandler:&*block]
+        }
+    }
+
+    fn new_render_command_encoder_retained(&self, render_pass_descriptor: &RenderPassDescriptorRef)
+                                           -> RenderCommandEncoder {
+        unsafe {
+            RenderCommandEncoder::from_ptr(
+                msg_send![self.as_ptr(),
+                          renderCommandEncoderWithDescriptor:render_pass_descriptor.as_ptr()])
+        }
+    }
+
+    fn real_new_blit_command_encoder(&self) -> BlitCommandEncoder {
+        unsafe {
+            BlitCommandEncoder::from_ptr(msg_send![self.as_ptr(), blitCommandEncoder])
+        }
+    }
+
+    fn real_new_compute_command_encoder(&self) -> ComputeCommandEncoder {
+        unsafe {
+            ComputeCommandEncoder::from_ptr(msg_send![self.as_ptr(), computeCommandEncoder])
+        }
+    }
+}
+
+trait CommandQueueExt {
+    // Just like `new_command_buffer()`, but returns an owned version.
+    fn new_command_buffer_retained(&self) -> CommandBuffer;
+}
+
+impl CommandQueueExt for CommandQueue {
+    fn new_command_buffer_retained(&self) -> CommandBuffer {
+        unsafe {
+            CommandBuffer::from_ptr(msg_send![self.as_ptr(), commandBuffer])
         }
     }
 }
@@ -2384,7 +2423,7 @@ trait ComputeCommandEncoderExt {
     fn wait_for_fence(&self, fence: &Fence);
 }
 
-impl ComputeCommandEncoderExt for ComputeCommandEncoderRef {
+impl ComputeCommandEncoderExt for ComputeCommandEncoder {
     fn update_fence(&self, fence: &Fence) {
         unsafe { msg_send![self.as_ptr(), updateFence:fence.0] }
     }
@@ -2411,6 +2450,20 @@ impl RenderCommandEncoderExt for RenderCommandEncoderRef {
     }
 }
 
+trait RenderPassDescriptorExt {
+    // Returns a new owned version.
+    fn new_retained() -> Self;
+}
+
+impl RenderPassDescriptorExt for RenderPassDescriptor {
+    fn new_retained() -> RenderPassDescriptor {
+        unsafe {
+            RenderPassDescriptor::from_ptr(msg_send![class!(MTLRenderPassDescriptor),
+                                                     renderPassDescriptor])
+        }
+    }
+}
+
 #[repr(u32)]
 enum MTLRenderStage {
     Vertex = 0,
@@ -2425,13 +2478,6 @@ trait Retain {
     fn retain(&self) -> Self::Owned;
 }
 
-impl Retain for CommandBufferRef {
-    type Owned = CommandBuffer;
-    fn retain(&self) -> CommandBuffer {
-        unsafe { CommandBuffer::from_ptr(msg_send![self.as_ptr(), retain]) }
-    }
-}
-
 impl Retain for CoreAnimationDrawableRef {
     type Owned = CoreAnimationDrawable;
     fn retain(&self) -> CoreAnimationDrawable {
@@ -2443,20 +2489,6 @@ impl Retain for CoreAnimationLayerRef {
     type Owned = CoreAnimationLayer;
     fn retain(&self) -> CoreAnimationLayer {
         unsafe { CoreAnimationLayer::from_ptr(msg_send![self.as_ptr(), retain]) }
-    }
-}
-
-impl Retain for RenderCommandEncoderRef {
-    type Owned = RenderCommandEncoder;
-    fn retain(&self) -> RenderCommandEncoder {
-        unsafe { RenderCommandEncoder::from_ptr(msg_send![self.as_ptr(), retain]) }
-    }
-}
-
-impl Retain for RenderPassDescriptorRef {
-    type Owned = RenderPassDescriptor;
-    fn retain(&self) -> RenderPassDescriptor {
-        unsafe { RenderPassDescriptor::from_ptr(msg_send![self.as_ptr(), retain]) }
     }
 }
 

@@ -75,7 +75,7 @@ void emitMicroline(thread const float4& microlineSegment, thread const uint& pat
     v_76.iMicrolines[outputMicrolineIndex] = uint4((uint(microlinePixels.x) & 65535u) | (uint(microlinePixels.y) << uint(16)), (uint(microlinePixels.z) & 65535u) | (uint(microlinePixels.w) << uint(16)), ((uint(microlineFractPixels.x) | (uint(microlineFractPixels.y) << uint(8))) | (uint(microlineFractPixels.z) << uint(16))) | (uint(microlineFractPixels.w) << uint(24)), pathIndex);
 }
 
-kernel void main0(constant int& uMaxMicrolineCount [[buffer(0)]], constant int& uLastBatchSegmentIndex [[buffer(5)]], constant int& uPathCount [[buffer(6)]], constant float2x2& uTransform [[buffer(2)]], constant float2& uTranslation [[buffer(4)]], device bMicrolines& v_76 [[buffer(1)]], const device bPoints& v_194 [[buffer(3)]], const device bDiceMetadata& _253 [[buffer(7)]], const device bInputIndices& _300 [[buffer(8)]], device bComputeIndirectParams& _438 [[buffer(9)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
+kernel void main0(constant int& uMaxMicrolineCount [[buffer(0)]], constant int& uLastBatchSegmentIndex [[buffer(5)]], constant int& uPathCount [[buffer(6)]], constant float2x2& uTransform [[buffer(2)]], constant float2& uTranslation [[buffer(4)]], device bMicrolines& v_76 [[buffer(1)]], const device bPoints& v_194 [[buffer(3)]], const device bDiceMetadata& _253 [[buffer(7)]], const device bInputIndices& _300 [[buffer(8)]], device bComputeIndirectParams& _439 [[buffer(9)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
 {
     uint batchSegmentIndex = gl_GlobalInvocationID.x;
     if (batchSegmentIndex >= uint(uLastBatchSegmentIndex))
@@ -172,9 +172,9 @@ kernel void main0(constant int& uMaxMicrolineCount [[buffer(0)]], constant int& 
     {
         segmentCountF = length(baseline.zw - baseline.xy) / 16.0;
     }
-    int segmentCount = int(ceil(segmentCountF));
-    uint _443 = atomic_fetch_add_explicit((device atomic_uint*)&_438.iComputeIndirectParams[3], uint(segmentCount), memory_order_relaxed);
-    uint firstOutputMicrolineIndex = _443;
+    int segmentCount = max(int(ceil(segmentCountF)), 1);
+    uint _444 = atomic_fetch_add_explicit((device atomic_uint*)&_439.iComputeIndirectParams[3], uint(segmentCount), memory_order_relaxed);
+    uint firstOutputMicrolineIndex = _444;
     float prevT = 0.0;
     float2 prevPoint = baseline.xy;
     float2 nextPoint;
