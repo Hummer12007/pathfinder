@@ -437,7 +437,7 @@ impl<D> RendererD3D11<D> where D: Device {
         });
 
         core.device.end_timer_query(&timer_query);
-        core.current_timer.as_mut().unwrap().raster_times.push(TimerFuture::new(timer_query));
+        core.current_timer.as_mut().unwrap().fill_times.push(TimerFuture::new(timer_query));
         core.stats.drawcall_count += 1;
 
         core.framebuffer_flags.insert(FramebufferFlags::MASK_FRAMEBUFFER_IS_DIRTY);
@@ -806,7 +806,7 @@ impl<D> RendererD3D11<D> where D: Device {
         });
 
         core.device.end_timer_query(&timer_query);
-        core.current_timer.as_mut().unwrap().raster_times.push(TimerFuture::new(timer_query));
+        core.current_timer.as_mut().unwrap().composite_times.push(TimerFuture::new(timer_query));
         core.stats.drawcall_count += 1;
 
         core.preserve_draw_framebuffer();

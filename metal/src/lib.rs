@@ -22,6 +22,8 @@ use byteorder::{NativeEndian, WriteBytesExt};
 use cocoa::foundation::{NSRange, NSUInteger};
 use core_foundation::base::TCFType;
 use core_foundation::string::{CFString, CFStringRef};
+use dispatch::ffi::dispatch_queue_t;
+use dispatch::{Queue, QueueAttribute};
 use foreign_types::{ForeignType, ForeignTypeRef};
 use half::f16;
 use io_surface::IOSurfaceRef;
@@ -73,6 +75,7 @@ pub struct MetalDevice {
     command_queue: CommandQueue,
     command_buffers: RefCell<Vec<CommandBuffer>>,
     samplers: Vec<SamplerState>,
+    dispatch_queue: Queue,
     shared_event: SharedEvent,
     shared_event_listener: SharedEventListener,
     compute_fence: RefCell<Option<Fence>>,
@@ -143,6 +146,10 @@ impl MetalDevice {
 
         let shared_event = device.new_shared_event();
 
+        let dispatch_queue = Queue::create("graphics.pathfinder.queue",
+                                           QueueAttribute::Concurrent);
+        let shared_event_listener = SharedEventListener::new_from_dispatch_queue(&dispatch_queue);
+
         MetalDevice {
             device,
             main_color_texture: texture,
@@ -150,8 +157,9 @@ impl MetalDevice {
             command_queue,
             command_buffers: RefCell::new(vec![]),
             samplers,
+            dispatch_queue,
             shared_event,
-            shared_event_listener: SharedEventListener::new(),
+            shared_event_listener,
             compute_fence: RefCell::new(None),
             next_timer_query_event_value: Cell::new(1),
         }
@@ -220,12 +228,14 @@ pub struct MetalTimerQuery(Arc<MetalTimerQueryInfo>);
 struct MetalTimerQueryInfo {
     mutex: Mutex<MetalTimerQueryData>,
     cond: Condvar,
-    event_value: u64,
 }
 
 struct MetalTimerQueryData {
     start_time: Option<Instant>,
     end_time: Option<Instant>,
+    start_block: Option<RcBlock<(*mut Object, u64), ()>>,
+    end_block: Option<RcBlock<(*mut Object, u64), ()>>,
+    start_event_value: u64,
 }
 
 #[derive(Clone)]
@@ -835,52 +845,67 @@ impl Device for MetalDevice {
     }
 
     fn create_timer_query(&self) -> MetalTimerQuery {
-        let event_value = self.next_timer_query_event_value.get();
-        self.next_timer_query_event_value.set(event_value + 2);
+        //println!("create_timer_query()");
 
         let query = MetalTimerQuery(Arc::new(MetalTimerQueryInfo {
-            event_value,
-            mutex: Mutex::new(MetalTimerQueryData { start_time: None, end_time: None }),
+            mutex: Mutex::new(MetalTimerQueryData {
+                start_time: None,
+                end_time: None,
+                start_block: None,
+                end_block: None,
+                start_event_value: 0,
+            }),
             cond: Condvar::new(),
         }));
 
-        let captured_query = query.clone();
-        let start_block = ConcreteBlock::new(move |_: *mut Object, _: u64| {
+        let captured_query = Arc::downgrade(&query.0);
+        query.0.mutex.lock().unwrap().start_block = Some(ConcreteBlock::new(move |_: *mut Object,
+                                                                                  value: u64| {
+            //println!("start block: {}", value);
             let start_time = Instant::now();
-            let mut guard = captured_query.0.mutex.lock().unwrap();
+            let query = captured_query.upgrade().unwrap();
+            let mut guard = query.mutex.lock().unwrap();
             guard.start_time = Some(start_time);
-        });
-        let captured_query = query.clone();
-        let end_block = ConcreteBlock::new(move |_: *mut Object, _: u64| {
+        }).copy());
+        let captured_query = Arc::downgrade(&query.0);
+        query.0.mutex.lock().unwrap().end_block = Some(ConcreteBlock::new(move |_: *mut Object,
+                                                                                value: u64| {
+            //println!("end block: {}", value);
             let end_time = Instant::now();
-            let mut guard = captured_query.0.mutex.lock().unwrap();
+            let query = captured_query.upgrade().unwrap();
+            let mut guard = query.mutex.lock().unwrap();
             guard.end_time = Some(end_time);
-            captured_query.0.cond.notify_all();
-        });
-        self.shared_event.notify_listener_at_value(&self.shared_event_listener,
-                                                   event_value,
-                                                   start_block.copy());
-        self.shared_event.notify_listener_at_value(&self.shared_event_listener,
-                                                   event_value + 1,
-                                                   end_block.copy());
+            query.cond.notify_all();
+        }).copy());
 
         query
     }
 
     fn begin_timer_query(&self, query: &MetalTimerQuery) {
+        let start_event_value = self.next_timer_query_event_value.get();
+        self.next_timer_query_event_value.set(start_event_value + 2);
+        let mut guard = query.0.mutex.lock().unwrap();
+        guard.start_event_value = start_event_value;
+        self.shared_event.notify_listener_at_value(&self.shared_event_listener,
+                                                   start_event_value,
+                                                   (*guard.start_block.as_ref().unwrap()).clone());
         self.command_buffers
             .borrow_mut()
             .last()
             .unwrap()
-            .encode_signal_event(&self.shared_event, query.0.event_value);
+            .encode_signal_event(&self.shared_event, start_event_value);
     }
 
     fn end_timer_query(&self, query: &MetalTimerQuery) {
+        let guard = query.0.mutex.lock().unwrap();
+        self.shared_event.notify_listener_at_value(&self.shared_event_listener,
+                                                   guard.start_event_value + 1,
+                                                   (*guard.end_block.as_ref().unwrap()).clone());
         self.command_buffers
             .borrow_mut()
             .last()
             .unwrap()
-            .encode_signal_event(&self.shared_event, query.0.event_value + 1);
+            .encode_signal_event(&self.shared_event, guard.start_event_value + 1);
     }
 
     fn try_recv_timer_query(&self, query: &MetalTimerQuery) -> Option<Duration> {
@@ -2174,10 +2199,11 @@ impl Drop for SharedEventListener {
 }
 
 impl SharedEventListener {
-    fn new() -> SharedEventListener {
+    fn new_from_dispatch_queue(queue: &Queue) -> SharedEventListener {
         unsafe {
             let listener: *mut Object = msg_send![class!(MTLSharedEventListener), alloc];
-            SharedEventListener(msg_send![listener, init])
+            let raw_queue: *const *mut dispatch_queue_t = mem::transmute(queue);
+            SharedEventListener(msg_send![listener, initWithDispatchQueue:*raw_queue])
         }
     }
 }

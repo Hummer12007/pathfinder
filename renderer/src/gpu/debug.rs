@@ -31,8 +31,8 @@ const SAMPLE_BUFFER_SIZE: usize = 60;
 const STATS_WINDOW_WIDTH: i32 = 275;
 const STATS_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 3 + PADDING + 2;
 
-const PERFORMANCE_WINDOW_WIDTH: i32 = 385;
-const PERFORMANCE_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 9 + PADDING + 2;
+const PERFORMANCE_WINDOW_WIDTH: i32 = 400;
+const PERFORMANCE_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 10 + PADDING + 2;
 
 const INFO_WINDOW_WIDTH: i32 = 425;
 const INFO_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 2 + PADDING + 2;
@@ -198,27 +198,34 @@ impl<D> DebugUIPresenter<D> where D: Device {
         );
         self.ui_presenter.draw_text(
             device,
-            &format!("GPU Raster: {:.3} ms", duration_to_ms(mean_gpu_sample.raster_time)),
+            &format!("GPU Fill: {:.3} ms", duration_to_ms(mean_gpu_sample.fill_time)),
             origin + vec2i(0, LINE_HEIGHT * 6),
             false,
         );
         self.ui_presenter.draw_text(
             device,
-            &format!("GPU Other: {:.3} ms", duration_to_ms(mean_gpu_sample.other_time)),
+            &format!("GPU Comp.: {:.3} ms", duration_to_ms(mean_gpu_sample.composite_time)),
             origin + vec2i(0, LINE_HEIGHT * 7),
+            false,
+        );
+        self.ui_presenter.draw_text(
+            device,
+            &format!("GPU Other: {:.3} ms", duration_to_ms(mean_gpu_sample.other_time)),
+            origin + vec2i(0, LINE_HEIGHT * 8),
             false,
         );
 
         // FIXME(pcwalton): Not accurate; depends on renderer level.
-        let wallclock_time = f64::max(duration_to_ms(mean_gpu_sample.raster_time),
+        let wallclock_time = f64::max(duration_to_ms(mean_gpu_sample.fill_time),
                                       duration_to_ms(mean_cpu_sample.cpu_build_time)) +
+            duration_to_ms(mean_gpu_sample.composite_time) +
             duration_to_ms(mean_gpu_sample.dice_time) +
             duration_to_ms(mean_gpu_sample.bin_time) +
             duration_to_ms(mean_gpu_sample.other_time);
         self.ui_presenter.draw_text(
             device,
             &format!("Wallclock: {:.3} ms", wallclock_time),
-            origin + vec2i(0, LINE_HEIGHT * 8),
+            origin + vec2i(0, LINE_HEIGHT * 9),
             false,
         );
     }

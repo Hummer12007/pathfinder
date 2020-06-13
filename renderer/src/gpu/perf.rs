@@ -63,7 +63,8 @@ pub(crate) struct TimerQueryCache<D> where D: Device {
 pub(crate) struct PendingTimer<D> where D: Device {
     pub(crate) dice_times: Vec<TimerFuture<D>>,
     pub(crate) bin_times: Vec<TimerFuture<D>>,
-    pub(crate) raster_times: Vec<TimerFuture<D>>,
+    pub(crate) fill_times: Vec<TimerFuture<D>>,
+    pub(crate) composite_times: Vec<TimerFuture<D>>,
     pub(crate) other_times: Vec<TimerFuture<D>>,
 }
 
@@ -91,7 +92,8 @@ impl<D> PendingTimer<D> where D: Device {
         PendingTimer {
             dice_times: vec![],
             bin_times: vec![],
-            raster_times: vec![],
+            fill_times: vec![],
+            composite_times: vec![],
             other_times: vec![],
         }
     }
@@ -99,7 +101,8 @@ impl<D> PendingTimer<D> where D: Device {
     pub(crate) fn poll(&mut self, device: &D) -> Vec<D::TimerQuery> {
         let mut old_queries = vec![];
         for future in self.dice_times.iter_mut().chain(self.bin_times.iter_mut())
-                                                .chain(self.raster_times.iter_mut())
+                                                .chain(self.fill_times.iter_mut())
+                                                .chain(self.composite_times.iter_mut())
                                                 .chain(self.other_times.iter_mut()) {
             if let Some(old_query) = future.poll(device) {
                 old_queries.push(old_query)
@@ -111,11 +114,16 @@ impl<D> PendingTimer<D> where D: Device {
     pub(crate) fn total_time(&self) -> Option<RenderTime> {
         let dice_time = total_time_of_timer_futures(&self.dice_times);
         let bin_time = total_time_of_timer_futures(&self.bin_times);
-        let raster_time = total_time_of_timer_futures(&self.raster_times);
+        let fill_time = total_time_of_timer_futures(&self.fill_times);
+        let composite_time = total_time_of_timer_futures(&self.composite_times);
         let other_time = total_time_of_timer_futures(&self.other_times);
-        match (dice_time, bin_time, raster_time, other_time) {
-            (Some(dice_time), Some(bin_time), Some(raster_time), Some(other_time)) => {
-                Some(RenderTime { dice_time, bin_time, raster_time, other_time })
+        match (dice_time, bin_time, fill_time, composite_time, other_time) {
+            (Some(dice_time),
+             Some(bin_time),
+             Some(fill_time),
+             Some(composite_time),
+             Some(other_time)) => {
+                Some(RenderTime { dice_time, bin_time, fill_time, composite_time, other_time })
             }
             _ => None,
         }
@@ -159,14 +167,15 @@ fn total_time_of_timer_futures<D>(futures: &[TimerFuture<D>]) -> Option<Duration
 pub struct RenderTime {
     pub dice_time: Duration,
     pub bin_time: Duration,
-    pub raster_time: Duration,
+    pub fill_time: Duration,
+    pub composite_time: Duration,
     pub other_time: Duration,
 }
 
 impl RenderTime {
     #[inline]
     pub fn total_time(&self) -> Duration {
-        self.dice_time + self.bin_time + self.raster_time + self.other_time
+        self.dice_time + self.bin_time + self.fill_time + self.composite_time + self.other_time
     }
 }
 
@@ -176,7 +185,8 @@ impl Default for RenderTime {
         RenderTime {
             dice_time: Duration::new(0, 0),
             bin_time: Duration::new(0, 0),
-            raster_time: Duration::new(0, 0),
+            fill_time: Duration::new(0, 0),
+            composite_time: Duration::new(0, 0),
             other_time: Duration::new(0, 0),
         }
     }
@@ -190,7 +200,8 @@ impl Add<RenderTime> for RenderTime {
         RenderTime {
             dice_time: self.dice_time + other.dice_time,
             bin_time: self.bin_time + other.bin_time,
-            raster_time: self.raster_time + other.raster_time,
+            fill_time: self.fill_time + other.fill_time,
+            composite_time: self.composite_time + other.composite_time,
             other_time: self.other_time + other.other_time,
         }
     }
@@ -205,7 +216,8 @@ impl Div<usize> for RenderTime {
         RenderTime {
             dice_time: self.dice_time / divisor,
             bin_time: self.bin_time / divisor,
-            raster_time: self.raster_time / divisor,
+            fill_time: self.fill_time / divisor,
+            composite_time: self.composite_time / divisor,
             other_time: self.other_time / divisor,
         }
     }
