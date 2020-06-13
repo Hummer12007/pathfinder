@@ -462,7 +462,7 @@ impl<D> RendererD3D11<D> where D: Device {
     pub(crate) fn prepare_tiles_d3d11(&mut self,
                                       core: &mut RendererCore<D>,
                                       batch: &TileBatchDataD3D11) {
-        core.stats.tile_count += batch.tile_count as usize;
+        core.stats.total_tile_count += batch.tile_count as usize;
 
         // Upload tiles to GPU or allocate them as appropriate.
         let tiles_d3d11_buffer_id = self.allocate_tiles_d3d11(core, batch.tile_count);
@@ -673,6 +673,7 @@ impl<D> RendererD3D11<D> where D: Device {
 
         let alpha_tile_start = core.alpha_tile_count;
         core.alpha_tile_count += batch_alpha_tile_count;
+        core.stats.alpha_tile_count += batch_alpha_tile_count as usize;
         let alpha_tile_end = core.alpha_tile_count;
 
         PropagateTilesInfoD3D11 { alpha_tile_range: alpha_tile_start..alpha_tile_end }

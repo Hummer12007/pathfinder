@@ -29,7 +29,7 @@ use std::time::Duration;
 const SAMPLE_BUFFER_SIZE: usize = 60;
 
 const STATS_WINDOW_WIDTH: i32 = 275;
-const STATS_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 3 + PADDING + 2;
+const STATS_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 4 + PADDING + 2;
 
 const PERFORMANCE_WINDOW_WIDTH: i32 = 400;
 const PERFORMANCE_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 10 + PADDING + 2;
@@ -129,14 +129,20 @@ impl<D> DebugUIPresenter<D> where D: Device {
         );
         self.ui_presenter.draw_text(
             device,
-            &format!("Tiles: {}", mean_cpu_sample.tile_count),
+            &format!("Tiles: {}", mean_cpu_sample.total_tile_count),
             origin + vec2i(0, LINE_HEIGHT * 1),
             false,
         );
         self.ui_presenter.draw_text(
             device,
-            &format!("Fills: {}", mean_cpu_sample.fill_count),
+            &format!("Masks: {}", mean_cpu_sample.alpha_tile_count),
             origin + vec2i(0, LINE_HEIGHT * 2),
+            false,
+        );
+        self.ui_presenter.draw_text(
+            device,
+            &format!("Fills: {}", mean_cpu_sample.fill_count),
+            origin + vec2i(0, LINE_HEIGHT * 3),
             false,
         );
     }

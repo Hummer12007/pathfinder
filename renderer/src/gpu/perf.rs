@@ -19,7 +19,8 @@ use std::time::Duration;
 pub struct RenderStats {
     pub path_count: usize,
     pub fill_count: usize,
-    pub tile_count: usize,
+    pub alpha_tile_count: usize,
+    pub total_tile_count: usize,
     pub cpu_build_time: Duration,
     pub drawcall_count: u32,
     pub gpu_bytes_allocated: u64,
@@ -31,7 +32,8 @@ impl Add<RenderStats> for RenderStats {
     fn add(self, other: RenderStats) -> RenderStats {
         RenderStats {
             path_count: self.path_count + other.path_count,
-            tile_count: self.tile_count + other.tile_count,
+            alpha_tile_count: self.alpha_tile_count + other.alpha_tile_count,
+            total_tile_count: self.total_tile_count + other.total_tile_count,
             fill_count: self.fill_count + other.fill_count,
             cpu_build_time: self.cpu_build_time + other.cpu_build_time,
             drawcall_count: self.drawcall_count + other.drawcall_count,
@@ -46,7 +48,8 @@ impl Div<usize> for RenderStats {
     fn div(self, divisor: usize) -> RenderStats {
         RenderStats {
             path_count: self.path_count / divisor,
-            tile_count: self.tile_count / divisor,
+            alpha_tile_count: self.alpha_tile_count / divisor,
+            total_tile_count: self.total_tile_count / divisor,
             fill_count: self.fill_count / divisor,
             cpu_build_time: self.cpu_build_time / divisor as u32,
             drawcall_count: self.drawcall_count / divisor as u32,
