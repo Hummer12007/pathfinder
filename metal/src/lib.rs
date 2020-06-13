@@ -1812,7 +1812,9 @@ impl IntoTexture for IOSurfaceRef {
         descriptor.set_storage_mode(MTLStorageMode::Managed);
         descriptor.set_usage(MTLTextureUsage::Unknown);
 
-        msg_send![*metal_device, newTextureWithDescriptor:descriptor iosurface:self plane:0]
+        msg_send![*metal_device, newTextureWithDescriptor:descriptor.as_ptr()
+                                                iosurface:self
+                                                    plane:0]
     }
 }
 
