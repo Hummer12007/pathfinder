@@ -23,6 +23,7 @@ pub struct RenderStats {
     pub cpu_build_time: Duration,
     pub drawcall_count: u32,
     pub gpu_bytes_allocated: u64,
+    pub gpu_bytes_committed: u64,
 }
 
 impl Add<RenderStats> for RenderStats {
@@ -35,6 +36,7 @@ impl Add<RenderStats> for RenderStats {
             cpu_build_time: self.cpu_build_time + other.cpu_build_time,
             drawcall_count: self.drawcall_count + other.drawcall_count,
             gpu_bytes_allocated: self.gpu_bytes_allocated + other.gpu_bytes_allocated,
+            gpu_bytes_committed: self.gpu_bytes_committed + other.gpu_bytes_committed,
         }
     }
 }
@@ -49,6 +51,7 @@ impl Div<usize> for RenderStats {
             cpu_build_time: self.cpu_build_time / divisor as u32,
             drawcall_count: self.drawcall_count / divisor as u32,
             gpu_bytes_allocated: self.gpu_bytes_allocated / divisor as u64,
+            gpu_bytes_committed: self.gpu_bytes_committed / divisor as u64,
         }
     }
 }

@@ -32,7 +32,7 @@ const STATS_WINDOW_WIDTH: i32 = 275;
 const STATS_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 3 + PADDING + 2;
 
 const PERFORMANCE_WINDOW_WIDTH: i32 = 385;
-const PERFORMANCE_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 8 + PADDING + 2;
+const PERFORMANCE_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 9 + PADDING + 2;
 
 const INFO_WINDOW_WIDTH: i32 = 425;
 const INFO_WINDOW_HEIGHT: i32 = LINE_HEIGHT * 2 + PADDING + 2;
@@ -164,41 +164,48 @@ impl<D> DebugUIPresenter<D> where D: Device {
         );
         self.ui_presenter.draw_text(
             device,
-            &format!("GPU Memory: {:.1} MB",
+            &format!("VRAM Alloc.: {:.1} MB",
                      mean_cpu_sample.gpu_bytes_allocated as f64 / (1024.0 * 1024.0)),
             origin + vec2i(0, LINE_HEIGHT * 1),
             false,
         );
-
         self.ui_presenter.draw_text(
             device,
-            &format!("CPU: {:.3} ms", duration_to_ms(mean_cpu_sample.cpu_build_time)),
+            &format!("VRAM Commit: {:.1} MB",
+                     mean_cpu_sample.gpu_bytes_committed as f64 / (1024.0 * 1024.0)),
             origin + vec2i(0, LINE_HEIGHT * 2),
             false,
         );
 
         self.ui_presenter.draw_text(
             device,
-            &format!("GPU Dice: {:.3} ms", duration_to_ms(mean_gpu_sample.dice_time)),
+            &format!("CPU: {:.3} ms", duration_to_ms(mean_cpu_sample.cpu_build_time)),
             origin + vec2i(0, LINE_HEIGHT * 3),
             false,
         );
+
         self.ui_presenter.draw_text(
             device,
-            &format!("GPU Bin: {:.3} ms", duration_to_ms(mean_gpu_sample.bin_time)),
+            &format!("GPU Dice: {:.3} ms", duration_to_ms(mean_gpu_sample.dice_time)),
             origin + vec2i(0, LINE_HEIGHT * 4),
             false,
         );
         self.ui_presenter.draw_text(
             device,
-            &format!("GPU Raster: {:.3} ms", duration_to_ms(mean_gpu_sample.raster_time)),
+            &format!("GPU Bin: {:.3} ms", duration_to_ms(mean_gpu_sample.bin_time)),
             origin + vec2i(0, LINE_HEIGHT * 5),
             false,
         );
         self.ui_presenter.draw_text(
             device,
-            &format!("GPU Other: {:.3} ms", duration_to_ms(mean_gpu_sample.other_time)),
+            &format!("GPU Raster: {:.3} ms", duration_to_ms(mean_gpu_sample.raster_time)),
             origin + vec2i(0, LINE_HEIGHT * 6),
+            false,
+        );
+        self.ui_presenter.draw_text(
+            device,
+            &format!("GPU Other: {:.3} ms", duration_to_ms(mean_gpu_sample.other_time)),
+            origin + vec2i(0, LINE_HEIGHT * 7),
             false,
         );
 
@@ -211,7 +218,7 @@ impl<D> DebugUIPresenter<D> where D: Device {
         self.ui_presenter.draw_text(
             device,
             &format!("Wallclock: {:.3} ms", wallclock_time),
-            origin + vec2i(0, LINE_HEIGHT * 7),
+            origin + vec2i(0, LINE_HEIGHT * 8),
             false,
         );
     }

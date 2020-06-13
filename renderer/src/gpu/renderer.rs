@@ -378,14 +378,13 @@ impl<D> Renderer<D> where D: Device {
 
         self.core.device.end_commands();
         self.core.stats.gpu_bytes_allocated = self.core.allocator.bytes_allocated();
+        self.core.stats.gpu_bytes_committed = self.core.allocator.bytes_committed();
 
         match self.level_impl {
             RendererLevelImpl::D3D11(ref mut d3d11_renderer) => {
                 d3d11_renderer.end_frame(&mut self.core)
             }
         }
-
-        self.core.allocator.dump();
 
         if let Some(timer) = self.core.current_timer.take() {
             self.pending_timers.push_back(timer);

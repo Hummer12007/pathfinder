@@ -16,17 +16,18 @@ use fxhash::FxHashMap;
 use pathfinder_geometry::vector::{Vector2I, vec2i};
 use pathfinder_gpu::{BufferData, BufferTarget, BufferUploadMode, Device};
 use pathfinder_gpu::{TextureFormat, TextureSamplingFlags};
-use std::mem;
+use std::collections::VecDeque;
 use std::default::Default;
+use std::mem;
 
-const MIN_SIZE_CLASS: usize = 4;                // 16 bytes
-const MAX_FREE_SIZE: u64 = 32 * 1024 * 1024;    // 32 MB
+const MIN_SIZE_CLASS: usize = 4;                    // 16 bytes
+const MAX_GPU_MEMORY_USAGE: u64 = 64 * 1024 * 1024; // 64 MB
 
 pub(crate) struct GPUMemoryAllocator<D> where D: Device {
     buffers_in_use: FxHashMap<BufferID, BufferAllocation<D>>,
     textures_in_use: FxHashMap<TextureID, TextureAllocation<D>>,
     framebuffers_in_use: FxHashMap<FramebufferID, FramebufferAllocation<D>>,
-    free_buffers: Vec<FreeBuffer<D>>,
+    free_buffers: VecDeque<FreeBuffer<D>>,
     next_buffer_id: BufferID,
     next_texture_id: TextureID,
     next_framebuffer_id: FramebufferID,
@@ -126,7 +127,7 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
             buffers_in_use: FxHashMap::default(),
             textures_in_use: FxHashMap::default(),
             framebuffers_in_use: FxHashMap::default(),
-            free_buffers: vec![],
+            free_buffers: VecDeque::new(),
             next_buffer_id: BufferID(0),
             next_texture_id: TextureID(0),
             next_framebuffer_id: FramebufferID(0),
@@ -141,7 +142,7 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
         let byte_size = size * mem::size_of::<T>() as u64;
         for free_buffer_index in 0..self.free_buffers.len() {
             if self.free_buffers[free_buffer_index].allocation.size == byte_size {
-                let mut free_buffer = self.free_buffers.remove(free_buffer_index);
+                let mut free_buffer = self.free_buffers.remove(free_buffer_index).unwrap();
                 free_buffer.allocation.tag = tag;
                 self.bytes_committed += free_buffer.allocation.size;
                 self.buffers_in_use.insert(free_buffer.id, free_buffer.allocation);
@@ -221,7 +222,15 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
                              .remove(&id)
                              .expect("Attempted to free unallocated buffer!");
         self.bytes_committed -= allocation.size;
-        self.free_buffers.push(FreeBuffer { id, allocation });
+        self.free_buffers.push_back(FreeBuffer { id, allocation });
+
+        // Trim memory if needed.
+        while self.bytes_allocated > MAX_GPU_MEMORY_USAGE {
+            match self.free_buffers.pop_front() {
+                None => break,
+                Some(buffer_to_purge) => self.bytes_allocated -= buffer_to_purge.allocation.size,
+            }
+        }
     }
 
     pub(crate) fn free_texture(&mut self, id: TextureID) {
@@ -257,6 +266,11 @@ impl<D> GPUMemoryAllocator<D> where D: Device {
     #[inline]
     pub(crate) fn bytes_allocated(&self) -> u64 {
         self.bytes_allocated
+    }
+
+    #[inline]
+    pub(crate) fn bytes_committed(&self) -> u64 {
+        self.bytes_committed
     }
 
     pub(crate) fn dump(&self) {
