@@ -565,7 +565,7 @@ impl<D> RendererD3D11<D> where D: Device {
         core.allocator.free_buffer(alpha_tiles_buffer_id);
 
         // FIXME(pcwalton): This seems like the wrong place to do this...
-        self.sort_tiles(core, tiles_d3d11_buffer_id, first_tile_map_buffer_id);
+        self.sort_tiles(core, tiles_d3d11_buffer_id, first_tile_map_buffer_id, z_buffer_id);
 
         // Record tile batch info.
         self.tile_batch_info.insert(batch.batch_id.0 as usize, TileBatchInfoD3D11 {
@@ -681,11 +681,13 @@ impl<D> RendererD3D11<D> where D: Device {
     fn sort_tiles(&mut self,
                   core: &mut RendererCore<D>,
                   tiles_d3d11_buffer_id: BufferID,
-                  first_tile_map_buffer_id: BufferID) {
+                  first_tile_map_buffer_id: BufferID,
+                  z_buffer_id: BufferID) {
         let sort_program = &self.programs.sort_program;
 
         let tiles_d3d11_buffer = core.allocator.get_buffer(tiles_d3d11_buffer_id);
         let first_tile_map_buffer = core.allocator.get_buffer(first_tile_map_buffer_id);
+        let z_buffer = core.allocator.get_buffer(z_buffer_id);
 
         let tile_count = core.framebuffer_tile_size().area();
 
@@ -706,7 +708,8 @@ impl<D> RendererD3D11<D> where D: Device {
             ],
             storage_buffers: &[
                 (&sort_program.tiles_storage_buffer, tiles_d3d11_buffer),
-                (&sort_program.first_tile_map_storage_buffer, &first_tile_map_buffer),
+                (&sort_program.first_tile_map_storage_buffer, first_tile_map_buffer),
+                (&sort_program.z_buffer_storage_buffer, z_buffer),
             ],
         });
 

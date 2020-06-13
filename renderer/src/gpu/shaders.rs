@@ -1059,6 +1059,7 @@ pub struct SortProgramD3D11<D> where D: Device {
     pub tile_count_uniform: D::Uniform,
     pub tiles_storage_buffer: D::StorageBuffer,
     pub first_tile_map_storage_buffer: D::StorageBuffer,
+    pub z_buffer_storage_buffer: D::StorageBuffer,
 }
 
 impl<D> SortProgramD3D11<D> where D: Device {
@@ -1070,12 +1071,14 @@ impl<D> SortProgramD3D11<D> where D: Device {
         let tile_count_uniform = device.get_uniform(&program, "TileCount");
         let tiles_storage_buffer = device.get_storage_buffer(&program, "Tiles", 0);
         let first_tile_map_storage_buffer = device.get_storage_buffer(&program, "FirstTileMap", 1);
+        let z_buffer_storage_buffer = device.get_storage_buffer(&program, "ZBuffer", 2);
 
         SortProgramD3D11 {
             program,
             tile_count_uniform,
             tiles_storage_buffer,
             first_tile_map_storage_buffer,
+            z_buffer_storage_buffer,
         }
     }
 }

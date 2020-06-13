@@ -39,6 +39,10 @@ layout(std430, binding = 1)buffer bFirstTileMap {
     restrict int iFirstTileMap[];
 };
 
+layout(std430, binding = 2)buffer bZBuffer {
+    restrict readonly int iZBuffer[];
+};
+
 layout(local_size_x = 64)in;
 
 int getFirst(uint globalTileIndex){
@@ -58,6 +62,8 @@ void main(){
     if(globalTileIndex >= uint(uTileCount))
         return;
 
+    int zValue = iZBuffer[globalTileIndex];
+
     int unsortedFirstTileIndex = getFirst(globalTileIndex);
     int sortedFirstTileIndex = - 1;
 
@@ -65,21 +71,23 @@ void main(){
         int currentTileIndex = unsortedFirstTileIndex;
         unsortedFirstTileIndex = getNextTile(currentTileIndex);
 
-        int prevTrialTileIndex = - 1;
-        int trialTileIndex = sortedFirstTileIndex;
-        while(true){
-            if(trialTileIndex < 0 || currentTileIndex < trialTileIndex){
-                if(prevTrialTileIndex < 0){
-                    setNextTile(currentTileIndex, sortedFirstTileIndex);
-                    sortedFirstTileIndex = currentTileIndex;
-                } else {
-                    setNextTile(currentTileIndex, trialTileIndex);
-                    setNextTile(prevTrialTileIndex, currentTileIndex);
+        if(currentTileIndex >= zValue){
+            int prevTrialTileIndex = - 1;
+            int trialTileIndex = sortedFirstTileIndex;
+            while(true){
+                if(trialTileIndex < 0 || currentTileIndex < trialTileIndex){
+                    if(prevTrialTileIndex < 0){
+                        setNextTile(currentTileIndex, sortedFirstTileIndex);
+                        sortedFirstTileIndex = currentTileIndex;
+                    } else {
+                        setNextTile(currentTileIndex, trialTileIndex);
+                        setNextTile(prevTrialTileIndex, currentTileIndex);
+                    }
+                    break;
                 }
-                break;
+                prevTrialTileIndex = trialTileIndex;
+                trialTileIndex = getNextTile(trialTileIndex);
             }
-            prevTrialTileIndex = trialTileIndex;
-            trialTileIndex = getNextTile(trialTileIndex);
         }
     }
 

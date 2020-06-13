@@ -170,7 +170,7 @@ kernel void main0(constant int& uColumnCount [[buffer(0)]], constant int& uFirst
         int tileMapIndex = (tileCoord_1.y * uFramebufferTileSize.x) + tileCoord_1.x;
         if ((zWrite && (drawTileBackdrop != 0)) && (drawAlphaTileIndex < 0))
         {
-            int _386 = atomic_fetch_max_explicit((device atomic_int*)&_381.iZBuffer[tileMapIndex], int(drawPathIndex), memory_order_relaxed);
+            int _386 = atomic_fetch_max_explicit((device atomic_int*)&_381.iZBuffer[tileMapIndex], int(drawTileIndex), memory_order_relaxed);
         }
         if ((drawTileBackdrop != 0) || (drawAlphaTileIndex >= 0))
         {

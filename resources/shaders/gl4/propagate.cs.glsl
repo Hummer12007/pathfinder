@@ -213,7 +213,7 @@ void main(){
         ivec2 tileCoord = ivec2(tileX, tileY)+ ivec2(drawTileRect . xy);
         int tileMapIndex = tileCoord . y * uFramebufferTileSize . x + tileCoord . x;
         if(zWrite && drawTileBackdrop != 0 && drawAlphaTileIndex < 0)
-            atomicMax(iZBuffer[tileMapIndex], int(drawPathIndex));
+            atomicMax(iZBuffer[tileMapIndex], int(drawTileIndex));
 
 
         if(drawTileBackdrop != 0 || drawAlphaTileIndex >= 0){
