@@ -221,13 +221,20 @@ impl<D> DebugUIPresenter<D> where D: Device {
             false,
         );
 
-        // FIXME(pcwalton): Not accurate; depends on renderer level.
-        let wallclock_time = f64::max(duration_to_ms(mean_gpu_sample.fill_time),
-                                      duration_to_ms(mean_cpu_sample.cpu_build_time)) +
-            duration_to_ms(mean_gpu_sample.composite_time) +
-            duration_to_ms(mean_gpu_sample.dice_time) +
-            duration_to_ms(mean_gpu_sample.bin_time) +
-            duration_to_ms(mean_gpu_sample.other_time);
+        let mut wallclock_time = match self.renderer_level {
+            RendererLevel::D3D11 => {
+                duration_to_ms(mean_cpu_sample.cpu_build_time) +
+                    duration_to_ms(mean_gpu_sample.fill_time)
+            }
+            RendererLevel::D3D9 => {
+                f64::max(duration_to_ms(mean_cpu_sample.cpu_build_time),
+                         duration_to_ms(mean_gpu_sample.fill_time))
+            }
+        };
+        wallclock_time += duration_to_ms(mean_gpu_sample.composite_time) +
+                          duration_to_ms(mean_gpu_sample.dice_time) +
+                          duration_to_ms(mean_gpu_sample.bin_time) +
+                          duration_to_ms(mean_gpu_sample.other_time);
         self.ui_presenter.draw_text(
             device,
             &format!("Wallclock: {:.3} ms", wallclock_time),
